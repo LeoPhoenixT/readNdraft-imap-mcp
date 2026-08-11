@@ -4,26 +4,104 @@ Safely search, read, flag, and draft email through IMAP. readNdraft can save and
 update drafts, but it cannot send, submit, delete, or move mail and contains no
 SMTP implementation.
 
-## Quick start
+## Installation
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run
-the interactive setup directly from PyPI:
+### 1. Check the prerequisites
+
+You need:
+
+- Windows 10/11 with Windows Credential Manager, or Linux with a working Secret
+  Service-compatible keyring.
+- An IMAP account that permits password or app-password authentication using
+  `LOGIN` or `PLAIN` over implicit TLS. OAuth is not implemented.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) on `PATH`.
+- Codex, ChatGPT desktop, or Claude Code.
+
+Confirm that uv is available:
 
 ```console
-uvx readndraft-imap-mcp@latest setup
+uv --version
 ```
 
-The wizard checks the OS credential backend, creates private local state, asks
-for IMAP settings and a password/app password through a hidden terminal prompt,
-tests the account, prints a version-pinned MCP configuration, and can install the
-readNdraft Agent Skill. No repository clone or permanent Python installation is
-required. uv runs the command in an isolated environment while account metadata,
-the IPC key, audit data, draft provenance, and OS-managed credentials remain in the
-current user's application directories.
+No repository clone or permanent readNdraft installation is required. `uvx`
+runs the published package in an isolated environment.
 
-Setup requires a real interactive terminal. Never put an IMAP password in a
-command argument, environment variable, MCP configuration, issue, chat, or test
-report.
+### 2. Run guided setup
+
+For Codex, run this command in a real interactive terminal:
+
+```console
+uvx readndraft-imap-mcp@latest setup --client codex --install-skill
+```
+
+Use `chatgpt-desktop` or `claude-code` instead of `codex` when configuring one
+of those clients.
+
+The wizard will:
+
+1. Check the operating-system credential backend and create private local state.
+2. Ask for an account alias, IMAP host, port, username, and authentication method.
+3. Read the password or app password through a hidden terminal prompt.
+4. Test the IMAP connection before saving the account.
+5. Print a secret-free, version-pinned MCP configuration.
+6. Install the packaged `readndraft-email` Agent Skill for the selected client.
+
+Never put an IMAP password in a command argument, environment variable, MCP
+configuration, issue, chat, or test report.
+
+### 3. Add the generated client configuration
+
+Copy the configuration printed by setup into your client's MCP configuration.
+For Codex, add the printed `[mcp_servers.readndraft]` section to:
+
+- Windows: `%USERPROFILE%\.codex\config.toml`
+- Linux: `~/.codex/config.toml`
+
+The generated command pins the package version so a future release cannot
+silently change this security-sensitive MCP at startup. On Windows it uses
+`uvw`, uv's consoleless launcher, so the MCP does not open a terminal window.
+The Codex configuration also sets `default_tools_approval_mode = "approve"` to
+avoid native tool-approval popups. Write operations still require direct
+conversational confirmation through the packaged Agent Skill.
+
+See the [Codex/ChatGPT guide](docs/CLIENT_CODEX.md) or
+[Claude Code guide](docs/CLIENT_CLAUDE.md) for client-specific details.
+
+### 4. Restart and verify
+
+Fully restart the client after changing its MCP configuration. Then run an
+online diagnostic from a terminal:
+
+```console
+uvx readndraft-imap-mcp@latest doctor --online
+```
+
+For Codex, you can also confirm that the entry was loaded:
+
+```console
+codex mcp get readndraft
+```
+
+Open a new task and ask: `List my readNdraft accounts and mailboxes.` A
+successful response confirms that the client can start the MCP and reach the
+local broker.
+
+### What setup stores
+
+| Item | Location or behavior |
+| --- | --- |
+| Runtime | Downloaded and run in uv's isolated cache; no repository clone is needed. |
+| Client configuration | Stored by the selected client and contains no IMAP password. |
+| Agent Skill | `~/.agents/skills/readndraft-email` for Codex or `~/.claude/skills/readndraft-email` for Claude Code. |
+| IMAP password | Stored only in Windows Credential Manager or the Linux Secret Service keyring. |
+| Account metadata and app state | Stored in private per-user readNdraft application directories. |
+
+If setup reports a credential-backend or connection error, see
+[Windows installation](docs/INSTALL_WINDOWS.md),
+[Linux installation](docs/INSTALL_LINUX.md), and
+[troubleshooting](docs/TROUBLESHOOTING.md). The first MCP start may take longer
+while uv downloads the pinned package. If a stored password has changed, run
+`uvx readndraft-imap-mcp account rotate-secret ALIAS`.
 
 ## What it can do
 
@@ -45,18 +123,6 @@ report.
 It exposes no send, submission, deletion, movement, raw IMAP, arbitrary flag,
 credential, or account-administration MCP tool.
 
-## Requirements
-
-- Windows with Windows Credential Manager, or Linux with a working Secret
-  Service-compatible keyring.
-- `uv` on `PATH`.
-- An IMAP account that permits password or app-password authentication using
-  `LOGIN` or `PLAIN` over implicit TLS. OAuth is not implemented.
-- Codex, ChatGPT desktop, or Claude Code for the documented client flows.
-
-See [Windows installation](docs/INSTALL_WINDOWS.md) or
-[Linux installation](docs/INSTALL_LINUX.md) for platform checks.
-
 ## Manual setup and administration
 
 The setup wizard is recommended. Individual human-only commands are also
@@ -75,7 +141,7 @@ uvx readndraft-imap-mcp account delete work
 Passwords are accepted only through a hidden local prompt. Account configuration
 and credential operations are not MCP tools.
 
-## Connect an MCP client
+## Configure another MCP client
 
 Generate a secret-free configuration:
 
@@ -85,13 +151,9 @@ uvx readndraft-imap-mcp@latest configure chatgpt-desktop
 uvx readndraft-imap-mcp@latest configure claude-code
 ```
 
-The generated command pins the readNdraft version that produced the
-configuration. It invokes `uvx` on Linux and the official consoleless `uvw`
-alias on Windows, preventing an MCP console window while keeping the same
-isolated `uv tool run` behavior. Pinning prevents an unreviewed package update
-from silently changing a security-sensitive MCP at client startup. See the
-[Codex/ChatGPT guide](docs/CLIENT_CODEX.md) and
-[Claude Code guide](docs/CLIENT_CLAUDE.md).
+Use these commands to generate another client configuration without repeating
+account setup. Each command prints a secret-free configuration pinned to the
+readNdraft version that generated it.
 
 The unified `mcp` command uses the authenticated on-demand launcher. It reuses a
 healthy broker, starts exactly one when needed, and holds an authenticated lease
