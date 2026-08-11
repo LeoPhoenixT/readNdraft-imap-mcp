@@ -17,7 +17,7 @@ _SPEC.loader.exec_module(_RELEASE_CHECK)
 
 
 def test_release_accepts_approved_license() -> None:
-    assert _RELEASE_CHECK.errors_for("v0.1.0") == []
+    assert _RELEASE_CHECK.errors_for("v0.1.1") == []
 
 
 def test_release_workflow_separates_build_and_oidc_publish() -> None:

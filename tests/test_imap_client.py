@@ -114,6 +114,8 @@ def test_attachment_filename_search_is_bounded_and_semantic() -> None:
         "HEADER",
         "Content-Disposition",
         '"report.pdf"',
+        "UID",
+        "1:41",
     )
     assert connection.selected == '"INBOX"'
 
@@ -204,7 +206,7 @@ def test_search_fetches_accurate_flags_separately(
     assert result[0].flags == (r"\Seen", "$Label1")
     assert result[0].size == 120
     assert result[0].received_at == "2026-07-22T03:30:00Z"
-    assert ("SEARCH", None, "UNSEEN") in connection.commands
+    assert ("SEARCH", None, "UNSEEN", "UID", "1:41") in connection.commands
     assert ("FETCH", "7", "(UID FLAGS)") in connection.commands
     summary = next(
         command for command in connection.commands
@@ -239,15 +241,24 @@ def test_search_fails_closed_for_invalid_standalone_flags(
 
 
 class PagedSearchConnection:
+    def __init__(self) -> None:
+        self.searches = []
+
     def select(self, mailbox, readonly=False):
         return "OK", [b"5"]
 
     def response(self, name):
-        return name, [b"42"]
+        return name, [b"42" if name == "UIDVALIDITY" else b"6"]
 
     def uid(self, *args):
         if args[0] == "SEARCH":
-            return "OK", [b"1 2 3 4 5"]
+            self.searches.append(args)
+            lower, upper = (int(value) for value in args[-1].split(":"))
+            return "OK", [
+                " ".join(
+                    str(uid) for uid in range(max(1, lower), min(5, upper) + 1)
+                ).encode()
+            ]
         uid = args[1]
         if args[2] == "(UID FLAGS)":
             return "OK", [(f"1 (UID {uid} FLAGS ())".encode(), b"")]
@@ -287,6 +298,82 @@ def test_search_window_pages_by_uid_without_boundary_duplicates() -> None:
     assert set(item.identity.uid for item in first.results).isdisjoint(
         item.identity.uid for item in second.results
     )
+    assert client.connection.searches == [
+        ("SEARCH", None, "ALL", "UID", "1:5"),
+        ("SEARCH", None, "ALL", "UID", "1:3"),
+    ]
+
+
+class LargeMailboxSearchConnection(PagedSearchConnection):
+    def response(self, name):
+        return name, [b"42" if name == "UIDVALIDITY" else b"1000001"]
+
+    def uid(self, *args):
+        if args[0] == "SEARCH":
+            self.searches.append(args)
+            assert args[-2:] == ("UID", "990001:1000000")
+            return "OK", [b"999998 999999 1000000"]
+        return super().uid(*args)
+
+
+def test_search_limits_large_mailbox_server_response_to_recent_uid_window() -> None:
+    client = ImapClient(
+        AccountConfig("personal", "mail.example.com", 993, "leo@example.com"),
+        "secret",
+    )
+    connection = LargeMailboxSearchConnection()
+    client.connection = connection
+
+    result = client.search_window("INBOX", SearchFilters(), limit=1)
+
+    assert [item.identity.uid for item in result.results] == ["1000000"]
+    assert result.has_more is True
+    assert connection.searches == [
+        ("SEARCH", None, "ALL", "UID", "990001:1000000")
+    ]
+
+
+class InvalidUidSearchConnection(PagedSearchConnection):
+    def response(self, name):
+        if name == "UIDVALIDITY":
+            return name, [b"42"]
+        if name == "UIDNEXT":
+            return name, [b"10001"]
+        return name, None
+
+    def uid(self, *args):
+        if args[0] == "SEARCH":
+            return "OK", [b"10001"]
+        return super().uid(*args)
+
+
+def test_search_rejects_uid_outside_requested_window() -> None:
+    client = ImapClient(
+        AccountConfig("personal", "mail.example.com", 993, "leo@example.com"),
+        "secret",
+    )
+    client.connection = InvalidUidSearchConnection()
+
+    with pytest.raises(ImapClientError, match="outside the requested range"):
+        client.search_window("INBOX", SearchFilters(), limit=1)
+
+
+class MissingUidNextConnection(PagedSearchConnection):
+    def response(self, name):
+        if name == "UIDVALIDITY":
+            return name, [b"42"]
+        return name, None
+
+
+def test_search_fails_closed_when_server_omits_uidnext() -> None:
+    client = ImapClient(
+        AccountConfig("personal", "mail.example.com", 993, "leo@example.com"),
+        "secret",
+    )
+    client.connection = MissingUidNextConnection()
+
+    with pytest.raises(ImapClientError, match="omitted UIDNEXT"):
+        client.search_window("INBOX", SearchFilters(), limit=1)
 
 
 class AppendConnection:

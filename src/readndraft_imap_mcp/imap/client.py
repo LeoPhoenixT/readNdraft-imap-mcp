@@ -445,6 +445,15 @@ class ImapClient:
             raise ImapClientError("UIDVALIDITY changed; restart the search")
         if before_uid is not None and (not before_uid.isascii() or not before_uid.isdigit()):
             raise ValueError("search cursor UID must be numeric")
+        _, uid_next_values = self.imap.response("UIDNEXT")
+        if not uid_next_values or not isinstance(uid_next_values[0], bytes):
+            raise ImapClientError("server omitted UIDNEXT")
+        try:
+            uid_next = int(uid_next_values[0].decode("ascii", errors="strict"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise ImapClientError("server returned invalid UIDNEXT") from exc
+        if uid_next < 1:
+            raise ImapClientError("server returned invalid UIDNEXT")
         criteria: list[str | None] = [None]
         for key, value in (
             ("FROM", filters.sender),
@@ -472,23 +481,40 @@ class ImapClient:
             criteria.append("FLAGGED" if filters.starred else "UNFLAGGED")
         if len(criteria) == 1:
             criteria.append("ALL")
-        data = _expect_ok(self.imap.uid("SEARCH", *criteria), "UID SEARCH")
-        if sum(len(item) for item in data if isinstance(item, bytes)) > 2 * 1024 * 1024:
-            raise ImapClientError("UID SEARCH response exceeded the result budget")
-        uids = [
-            uid.decode("ascii")
-            for item in data
-            if isinstance(item, bytes)
-            for uid in item.split()
-        ]
-        if before_uid is not None:
-            boundary = int(before_uid)
-            uids = [uid for uid in uids if int(uid) < boundary]
-        selected = uids[-(limit + 1) :]
+        upper_exclusive = min(uid_next, int(before_uid)) if before_uid else uid_next
+        selected: list[str] = []
+        while upper_exclusive > 1 and len(selected) <= limit:
+            lower = max(1, upper_exclusive - 10_000)
+            uid_range = f"{lower}:{upper_exclusive - 1}"
+            data = _expect_ok(
+                self.imap.uid("SEARCH", *criteria, "UID", uid_range),
+                "UID SEARCH",
+            )
+            if sum(len(item) for item in data if isinstance(item, bytes)) > 2 * 1024 * 1024:
+                raise ImapClientError("UID SEARCH response exceeded the result budget")
+            chunk: list[int] = []
+            try:
+                for item in data:
+                    if not isinstance(item, bytes):
+                        continue
+                    for raw_uid in item.split():
+                        value = int(raw_uid.decode("ascii", errors="strict"))
+                        if value < lower or value >= upper_exclusive:
+                            raise ImapClientError(
+                                "UID SEARCH returned a UID outside the requested range"
+                            )
+                        chunk.append(value)
+            except (UnicodeDecodeError, ValueError) as exc:
+                raise ImapClientError("UID SEARCH returned an invalid UID") from exc
+            for value in sorted(set(chunk), reverse=True):
+                selected.append(str(value))
+                if len(selected) > limit:
+                    break
+            upper_exclusive = lower
         has_more = len(selected) > limit
-        selected = selected[-limit:]
+        selected = selected[:limit]
         results: list[SearchResult] = []
-        for uid in reversed(selected):
+        for uid in selected:
             fetched = _expect_ok(
                 self.imap.uid(
                     "FETCH",
