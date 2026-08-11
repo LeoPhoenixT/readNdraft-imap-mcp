@@ -1,0 +1,72 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "readndraft-imap-mcp"
+version = "0.1.0"
+description = "Capability-minimized IMAP MCP service"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
+authors = [{ name = "LeoPhoenixT" }]
+keywords = ["mcp", "imap", "email", "draft", "security"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Communications :: Email :: Post-Office :: IMAP",
+]
+dependencies = [
+  "keyring==25.7.0",
+  "mcp[cli]==1.29.0",
+  "SecretStorage==3.5.0; sys_platform == 'linux'",
+]
+
+[project.urls]
+Homepage = "https://github.com/LeoPhoenixT/readNdraft-imap-mcp"
+Repository = "https://github.com/LeoPhoenixT/readNdraft-imap-mcp"
+Issues = "https://github.com/LeoPhoenixT/readNdraft-imap-mcp/issues"
+
+[project.optional-dependencies]
+dev = [
+  "pip-audit==2.10.1",
+  "pytest==9.1.1",
+]
+
+[project.scripts]
+readndraft-imap-mcp = "readndraft_imap_mcp.cli:main"
+readndraft-poc = "readndraft_imap_mcp.poc.cli:main"
+readndraft-admin = "readndraft_imap_mcp.admin.cli:main"
+readndraft-broker = "readndraft_imap_mcp.broker.daemon:main"
+readndraft-install = "readndraft_imap_mcp.platform.install:main"
+readndraft-client-config = "readndraft_imap_mcp.platform.client_config:main"
+
+[project.gui-scripts]
+readndraft-mcp = "readndraft_imap_mcp.mcp_server.server:main"
+readndraft-launch = "readndraft_imap_mcp.platform.launcher:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/readndraft_imap_mcp"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"skills/readndraft-email" = "readndraft_imap_mcp/_skills/readndraft-email"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/readndraft_imap_mcp",
+  "skills/readndraft-email",
+  "README.md",
+  "LICENSE",
+  "THIRD_PARTY_NOTICES.md",
+  "PLAN.md",
+  "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

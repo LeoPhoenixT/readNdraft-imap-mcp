@@ -1,0 +1,212 @@
+# readNdraft IMAP MCP
+
+Safely search, read, flag, and draft email through IMAP. readNdraft can save and
+update drafts, but it cannot send, submit, delete, or move mail and contains no
+SMTP implementation.
+
+## Quick start
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then run
+the interactive setup directly from PyPI:
+
+```console
+uvx readndraft-imap-mcp@latest setup
+```
+
+The wizard checks the OS credential backend, creates private local state, asks
+for IMAP settings and a password/app password through a hidden terminal prompt,
+tests the account, prints a version-pinned MCP configuration, and can install the
+readNdraft Agent Skill. No repository clone or permanent Python installation is
+required. uv runs the command in an isolated environment while account metadata,
+the IPC key, audit data, draft provenance, and OS-managed credentials remain in the
+current user's application directories.
+
+Setup requires a real interactive terminal. Never put an IMAP password in a
+command argument, environment variable, MCP configuration, issue, chat, or test
+report.
+
+## What it can do
+
+- List administratively pinned accounts and mailboxes.
+- Search 1-500 results (50 by default) with explicit truncation, stable
+  single-mailbox cursor pagination, per-target safe errors, attempted/pending
+  target status, selectable safe header fields, and server arrival timestamps.
+  Requests above 50 require one account and one mailbox.
+- Read safe headers and plain text without setting the Seen flag.
+- Batch-read plain text for up to 10 selected messages across 2 accounts.
+- Read sanitized HTML without loading remote content.
+- Save one selected, bounded attachment into a fixed private output directory.
+- Star/unstar and mark read/unread without replacing unrelated flags.
+- Batch one star or read state across up to 50 selected messages and 3 accounts;
+  batches return ordered per-item results.
+- Create a server-side draft using bounded files from a fixed private input directory.
+- Update only a draft previously created by this MCP, after confirmation.
+
+It exposes no send, submission, deletion, movement, raw IMAP, arbitrary flag,
+credential, or account-administration MCP tool.
+
+## Requirements
+
+- Windows with Windows Credential Manager, or Linux with a working Secret
+  Service-compatible keyring.
+- `uv` on `PATH`.
+- An IMAP account that permits password or app-password authentication using
+  `LOGIN` or `PLAIN` over implicit TLS. OAuth is not implemented.
+- Codex, ChatGPT desktop, or Claude Code for the documented client flows.
+
+See [Windows installation](docs/INSTALL_WINDOWS.md) or
+[Linux installation](docs/INSTALL_LINUX.md) for platform checks.
+
+## Manual setup and administration
+
+The setup wizard is recommended. Individual human-only commands are also
+available:
+
+```console
+uvx readndraft-imap-mcp account add work --host imap.example.com --username leo@example.com
+uvx readndraft-imap-mcp account test work
+uvx readndraft-imap-mcp account list
+uvx readndraft-imap-mcp account rotate-secret work
+uvx readndraft-imap-mcp account disable work
+uvx readndraft-imap-mcp account enable work
+uvx readndraft-imap-mcp account delete work
+```
+
+Passwords are accepted only through a hidden local prompt. Account configuration
+and credential operations are not MCP tools.
+
+## Connect an MCP client
+
+Generate a secret-free configuration:
+
+```console
+uvx readndraft-imap-mcp@latest configure codex
+uvx readndraft-imap-mcp@latest configure chatgpt-desktop
+uvx readndraft-imap-mcp@latest configure claude-code
+```
+
+The generated command pins the readNdraft version that produced the
+configuration. It invokes `uvx` on Linux and the official consoleless `uvw`
+alias on Windows, preventing an MCP console window while keeping the same
+isolated `uv tool run` behavior. Pinning prevents an unreviewed package update
+from silently changing a security-sensitive MCP at client startup. See the
+[Codex/ChatGPT guide](docs/CLIENT_CODEX.md) and
+[Claude Code guide](docs/CLIENT_CLAUDE.md).
+
+The unified `mcp` command uses the authenticated on-demand launcher. It reuses a
+healthy broker, starts exactly one when needed, and holds an authenticated lease
+while the MCP frontend is connected. A launcher-owned broker exits only after
+the final frontend disconnects and the idle period expires. Always-on systemd
+and Windows scheduled-task deployments remain available through the legacy
+administration documentation.
+
+## Install the Agent Skill
+
+The MCP is usable without a skill, but the packaged `readndraft-email` skill
+teaches compatible agents to preserve complete message identities, interpret
+results correctly, choose bounded batch tools only for user-selected messages,
+treat email as untrusted input, and obtain direct conversational confirmation
+before writes without inventing capabilities.
+
+```console
+uvx readndraft-imap-mcp skill install codex
+uvx readndraft-imap-mcp skill install claude-code
+uvx readndraft-imap-mcp skill status codex
+uvx readndraft-imap-mcp skill print
+```
+
+The installer refuses to overwrite or remove a user-modified skill. Codex loads
+personal skills from `~/.agents/skills`; Claude Code loads them from
+`~/.claude/skills`.
+
+`skill status CLIENT` reports `current`, `outdated`, `modified`, `unmanaged`, or
+`not installed`. Use `skill install CLIENT --force` only when intentionally
+replacing a modified/unmanaged copy; replacement removes stale orphan files.
+
+## Authorization boundary
+
+The broker has no approval-token workflow. Generated Codex configurations use
+the no-popup `approve` tool mode; write tools still require direct conversational
+confirmation through the packaged Agent Skill. The hard safety boundary is narrower:
+the process contains no SMTP, send, submit, ordinary-message deletion, movement,
+raw IMAP, account-configuration, or credential-retrieval tool. Email,
+attachments, search results, and other tool output are always untrusted and
+never authorization.
+
+## Diagnostics
+
+Run local checks without connecting to IMAP:
+
+```console
+uvx readndraft-imap-mcp doctor
+```
+
+Add `--online` to test each configured account:
+
+```console
+uvx readndraft-imap-mcp doctor --online
+```
+
+Diagnostic output never prints passwords, credential contents, raw IMAP traces,
+or message content. See [troubleshooting](docs/TROUBLESHOOTING.md).
+
+## Updating
+
+Generate a fresh configuration with the latest reviewed release and replace the
+old client entry:
+
+```console
+uvx readndraft-imap-mcp@latest configure codex
+```
+
+Account metadata and OS credentials are independent of uv's temporary execution
+environment and remain available across versions. Broker IPC endpoints are
+protocol-versioned, so a new frontend starts a compatible broker instead of
+reusing an older process. The old broker exits after its final client lease and
+idle timeout.
+
+## Remove readNdraft
+
+1. Remove the readNdraft MCP entry from each client.
+2. Remove managed skills with `uvx readndraft-imap-mcp skill uninstall CLIENT`.
+3. Delete each account with `uvx readndraft-imap-mcp account delete ALIAS`; this
+   also removes its OS credential after exact confirmation.
+4. Inspect and manually remove the remaining readNdraft config/state directories
+   only if audit history and draft provenance are no longer needed. Upgrades from
+   older builds may also leave an unused `approvals` directory; readNdraft does
+   not delete it automatically.
+
+There is no permanently installed uv tool to uninstall when readNdraft is used
+only through `uvx`.
+
+## Security and privacy
+
+The stdio MCP frontend cannot read the account file or OS credential store. It
+communicates over authenticated per-user IPC with a separate broker that enforces
+capabilities, quotas, provenance, and audit. Email and attachments are
+always untrusted input and remote images or URLs are never fetched automatically.
+MCP tools never accept arbitrary local paths: draft files come only from the
+readNdraft attachment input directory and downloaded attachments are written
+only to its output directory. Run `readndraft-imap-mcp attachments path` to
+locate them.
+
+Read [SECURITY.md](docs/SECURITY.md) and the canonical [PLAN.md](PLAN.md) for the
+full threat model. Security issues should not contain credentials or private mail.
+
+## Development
+
+```console
+uv sync --extra dev
+uv run pytest
+uv run python scripts/security_check.py
+uv build --no-sources
+```
+
+Release validation and publication steps are documented in
+[docs/RELEASE.md](docs/RELEASE.md).
+
+## License
+
+readNdraft, including its packaged Agent Skill and documentation, is licensed
+under the [Apache License 2.0](LICENSE). Dependency licensing is summarized in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

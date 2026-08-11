@@ -1,0 +1,4 @@
+interface:
+  display_name: "readNdraft Email"
+  short_description: "Safely read and draft email without sending"
+  default_prompt: "Use $readndraft-email to safely find and read my email."
