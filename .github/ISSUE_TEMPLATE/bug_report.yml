@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a reproducible, non-sensitive readNdraft defect
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not use this form for a suspected vulnerability. Report security issues privately through the repository Security tab. Never include credentials, real mail, account metadata, IPC keys, or private state.
+  - type: input
+    id: version
+    attributes:
+      label: readNdraft version
+      description: Run `uvx readndraft-imap-mcp doctor` to find the runtime version.
+      placeholder: 0.1.1
+    validations:
+      required: true
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - Windows 10/11
+        - Linux
+        - Other or unsupported
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use synthetic account names, addresses, messages, and attachments.
+      placeholder: List the minimal commands or MCP calls needed to reproduce the defect.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Include relevant `doctor` output or errors only after removing private data.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks
+      options:
+        - label: I removed credentials, real mail, account details, IPC keys, and private state.
+          required: true
+        - label: This is not an unpatched security vulnerability.
+          required: true

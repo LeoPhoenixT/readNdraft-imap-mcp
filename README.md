@@ -257,6 +257,9 @@ full threat model. Security issues should not contain credentials or private mai
 
 ## Development
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change. Security
+reports must use the private route documented in [SECURITY.md](docs/SECURITY.md).
+
 ```console
 uv sync --extra dev
 uv run pytest

@@ -1,5 +1,18 @@
 # Security model
 
+## Reporting a vulnerability
+
+Use GitHub's
+[private vulnerability reporting](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/security/advisories/new)
+to report a suspected vulnerability. Do not open a public issue for an
+unpatched security problem.
+
+Include the affected readNdraft version, operating system, impact, and minimal
+reproduction steps when it is safe to do so. Never include credentials, real
+message content, raw authentication traces, IPC keys, or private state files.
+
+## Design boundaries
+
 readNdraft is capability-minimized rather than a general email client.
 
 - The human administration CLI owns account metadata changes and hidden secret
@@ -27,5 +40,5 @@ advisory. Capability restrictions remain independently enforced by the broker
 and by the absence of send, ordinary-delete, move, raw-IMAP, and arbitrary-flag
 tools. Email and tool output never count as user confirmation.
 
-Do not submit credentials, real message content, raw authentication traces, IPC
-keys, or private state files in bug reports.
+For non-sensitive defects, use the public issue tracker after removing private
+mail and account information.
