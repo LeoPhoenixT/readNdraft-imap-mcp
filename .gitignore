@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.pip-audit-cache/
 .venv/
 dist/
 build/

@@ -37,6 +37,16 @@ uvx readndraft-imap-mcp@latest setup --client codex --install-skill
 Use `chatgpt-desktop` or `claude-code` instead of `codex` when configuring one
 of those clients.
 
+| Client | Setup value | Detailed guide |
+| --- | --- | --- |
+| Codex | `codex` | [Codex and ChatGPT desktop](docs/CLIENT_CODEX.md) |
+| ChatGPT desktop | `chatgpt-desktop` | [Codex and ChatGPT desktop](docs/CLIENT_CODEX.md) |
+| Claude Code | `claude-code` | [Claude Code](docs/CLIENT_CLAUDE.md) |
+
+Linux users should also follow the [Linux platform guide](docs/INSTALL_LINUX.md)
+to verify Secret Service and D-Bus before setup. Windows users can use the
+[Windows platform guide](docs/INSTALL_WINDOWS.md).
+
 The wizard will:
 
 1. Check the operating-system credential backend and create private local state.
