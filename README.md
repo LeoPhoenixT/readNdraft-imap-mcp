@@ -39,13 +39,13 @@ of those clients.
 
 | Client | Setup value | Detailed guide |
 | --- | --- | --- |
-| Codex | `codex` | [Codex and ChatGPT desktop](docs/CLIENT_CODEX.md) |
-| ChatGPT desktop | `chatgpt-desktop` | [Codex and ChatGPT desktop](docs/CLIENT_CODEX.md) |
-| Claude Code | `claude-code` | [Claude Code](docs/CLIENT_CLAUDE.md) |
+| Codex | `codex` | [Codex and ChatGPT desktop](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/CLIENT_CODEX.md) |
+| ChatGPT desktop | `chatgpt-desktop` | [Codex and ChatGPT desktop](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/CLIENT_CODEX.md) |
+| Claude Code | `claude-code` | [Claude Code](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/CLIENT_CLAUDE.md) |
 
-Linux users should also follow the [Linux platform guide](docs/INSTALL_LINUX.md)
+Linux users should also follow the [Linux platform guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/INSTALL_LINUX.md)
 to verify Secret Service and D-Bus before setup. Windows users can use the
-[Windows platform guide](docs/INSTALL_WINDOWS.md).
+[Windows platform guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/INSTALL_WINDOWS.md).
 
 The wizard will:
 
@@ -74,8 +74,9 @@ The Codex configuration also sets `default_tools_approval_mode = "approve"` to
 avoid native tool-approval popups. Write operations still require direct
 conversational confirmation through the packaged Agent Skill.
 
-See the [Codex/ChatGPT guide](docs/CLIENT_CODEX.md) or
-[Claude Code guide](docs/CLIENT_CLAUDE.md) for client-specific details.
+See the [Codex/ChatGPT guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/CLIENT_CODEX.md) or
+[Claude Code guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/CLIENT_CLAUDE.md)
+for client-specific details.
 
 ### 4. Restart and verify
 
@@ -107,9 +108,10 @@ local broker.
 | Account metadata and app state | Stored in private per-user readNdraft application directories. |
 
 If setup reports a credential-backend or connection error, see
-[Windows installation](docs/INSTALL_WINDOWS.md),
-[Linux installation](docs/INSTALL_LINUX.md), and
-[troubleshooting](docs/TROUBLESHOOTING.md). The first MCP start may take longer
+[Windows installation](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/INSTALL_WINDOWS.md),
+[Linux installation](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/INSTALL_LINUX.md), and
+[troubleshooting](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/TROUBLESHOOTING.md).
+The first MCP start may take longer
 while uv downloads the pinned package. If a stored password has changed, run
 `uvx readndraft-imap-mcp account rotate-secret ALIAS`.
 
@@ -220,7 +222,7 @@ uvx readndraft-imap-mcp doctor --online
 ```
 
 Diagnostic output never prints passwords, credential contents, raw IMAP traces,
-or message content. See [troubleshooting](docs/TROUBLESHOOTING.md).
+or message content. See [troubleshooting](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/TROUBLESHOOTING.md).
 
 ## Updating
 
@@ -262,13 +264,15 @@ readNdraft attachment input directory and downloaded attachments are written
 only to its output directory. Run `readndraft-imap-mcp attachments path` to
 locate them.
 
-Read [SECURITY.md](docs/SECURITY.md) and the canonical [PLAN.md](PLAN.md) for the
+Read [SECURITY.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/SECURITY.md)
+and the canonical [PLAN.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/PLAN.md) for the
 full threat model. Security issues should not contain credentials or private mail.
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing a change. Security
-reports must use the private route documented in [SECURITY.md](docs/SECURITY.md).
+See [CONTRIBUTING.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/CONTRIBUTING.md)
+before proposing a change. Security reports must use the private route
+documented in [SECURITY.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/SECURITY.md).
 
 ```console
 uv sync --extra dev
@@ -278,10 +282,11 @@ uv build --no-sources
 ```
 
 Release validation and publication steps are documented in
-[docs/RELEASE.md](docs/RELEASE.md).
+[docs/RELEASE.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/RELEASE.md).
 
 ## License
 
 readNdraft, including its packaged Agent Skill and documentation, is licensed
-under the [Apache License 2.0](LICENSE). Dependency licensing is summarized in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+under the [Apache License 2.0](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/LICENSE).
+Dependency licensing is summarized in
+[THIRD_PARTY_NOTICES.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/THIRD_PARTY_NOTICES.md).
