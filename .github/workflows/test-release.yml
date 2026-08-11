@@ -1,0 +1,117 @@
+name: Publish release candidate to TestPyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Version tag matching pyproject.toml (for example, v0.1.0)"
+        required: true
+        type: string
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12", "3.13", "3.14"]
+    steps:
+      - name: Check out default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.3"
+          enable-cache: false
+
+      - name: Install Python
+        run: uv python install ${{ matrix.python }}
+
+      - name: Install locked dependencies
+        run: uv sync --locked --extra dev
+
+      - name: Verify release metadata and requested tag
+        run: uv run --locked python scripts/release_check.py --tag "${{ inputs.release_tag }}"
+
+      - name: Run tests
+        run: uv run --locked pytest
+
+      - name: Enforce capability and secret policy
+        run: uv run --locked python scripts/security_check.py
+
+      - name: Audit installed dependencies
+        run: uv run --locked pip-audit --local --cache-dir .pip-audit-cache
+
+      - name: Enforce dependency license policy
+        run: uv run --locked python scripts/license_check.py
+
+  build:
+    needs: [test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.3"
+          enable-cache: false
+
+      - name: Build distributions
+        run: uv build --no-sources
+
+      - name: Smoke test wheel
+        run: uv run --isolated --no-project --with dist/*.whl scripts/release_smoke.py
+
+      - name: Smoke test source distribution
+        run: uv run --isolated --no-project --with dist/*.tar.gz scripts/release_smoke.py
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: testpypi-dist
+          path: dist/
+
+  publish:
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/readndraft-imap-mcp
+    permissions:
+      id-token: write
+    steps:
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.3"
+          enable-cache: false
+
+      - name: Download distributions
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: testpypi-dist
+          path: dist/
+
+      - name: Generate PEP 740 attestations
+        uses: astral-sh/attest-action@f589a42a7efb6fe400b4f400de60b4bc90390027 # v0.0.6
+
+      - name: Publish through TestPyPI trusted identity
+        run: >-
+          uv publish
+          --publish-url https://test.pypi.org/legacy/
+          --trusted-publishing always
