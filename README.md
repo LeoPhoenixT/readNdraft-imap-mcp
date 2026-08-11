@@ -226,12 +226,64 @@ or message content. See [troubleshooting](https://github.com/LeoPhoenixT/readNdr
 
 ## Updating
 
-Generate a fresh configuration with the latest reviewed release and replace the
-old client entry:
+Client configurations are version-pinned. Running `uvx ...@latest` by itself
+does not update the version that a configured MCP client starts.
+
+### 1. Check the installed and latest versions
+
+Run the current published diagnostic:
+
+```console
+uvx readndraft-imap-mcp@latest doctor
+```
+
+The `runtime readndraft-imap-mcp` line shows the version used by that command.
+Compare it with the version pinned in the existing client configuration.
+
+### 2. Regenerate the client configuration
+
+Generate a fresh secret-free configuration for each client:
 
 ```console
 uvx readndraft-imap-mcp@latest configure codex
+uvx readndraft-imap-mcp@latest configure chatgpt-desktop
+uvx readndraft-imap-mcp@latest configure claude-code
 ```
+
+For Codex or ChatGPT desktop, replace the complete old `readndraft` MCP entry
+with the newly printed configuration. For Claude Code, replace the user-scoped
+entry from a trusted directory:
+
+```console
+claude mcp remove readndraft --scope user
+claude mcp add-json readndraft "$(uvx readndraft-imap-mcp@latest configure claude-code)" --scope user
+```
+
+On PowerShell, capture the generated JSON in a variable as shown in the
+[Claude Code guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/CLIENT_CLAUDE.md).
+
+### 3. Refresh the Agent Skill
+
+Use `codex` for Codex or ChatGPT desktop and `claude-code` for Claude Code:
+
+```console
+uvx readndraft-imap-mcp@latest skill install codex
+uvx readndraft-imap-mcp@latest skill install claude-code
+```
+
+The installer will not overwrite a user-modified skill. Review local changes
+before using `--force` to replace a modified or unmanaged copy.
+
+### 4. Restart and verify
+
+Fully close and restart every configured client, then run:
+
+```console
+uvx readndraft-imap-mcp@latest doctor --online
+```
+
+Confirm the new pinned version in the client configuration, reconnect the MCP,
+and perform a harmless mailbox listing and one-result search.
 
 Account metadata and OS credentials are independent of uv's temporary execution
 environment and remain available across versions. Broker IPC endpoints are
@@ -239,19 +291,74 @@ protocol-versioned, so a new frontend starts a compatible broker instead of
 reusing an older process. The old broker exits after its final client lease and
 idle timeout.
 
-## Remove readNdraft
+## Uninstalling
 
-1. Remove the readNdraft MCP entry from each client.
-2. Remove managed skills with `uvx readndraft-imap-mcp skill uninstall CLIENT`.
-3. Delete each account with `uvx readndraft-imap-mcp account delete ALIAS`; this
-   also removes its OS credential after exact confirmation.
-4. Inspect and manually remove the remaining readNdraft config/state directories
-   only if audit history and draft provenance are no longer needed. Upgrades from
-   older builds may also leave an unused `approvals` directory; readNdraft does
-   not delete it automatically.
+Choose whether to remove only the MCP integration or all local readNdraft data.
+Removing client entries and skills leaves accounts, credentials, audit history,
+draft provenance, and attachment exchange files available for a later reinstall.
+
+### 1. Remove every client entry
+
+- Codex: remove the complete `[mcp_servers.readndraft]` table from
+  `%USERPROFILE%\.codex\config.toml` on Windows or `~/.codex/config.toml` on
+  Linux.
+- ChatGPT desktop: remove `readndraft` from the client's MCP settings.
+- Claude Code: run:
+
+  ```console
+  claude mcp remove readndraft --scope user
+  ```
+
+Fully close the clients after removing their entries so active MCP leases can
+end and a launcher-owned broker can exit after its idle timeout.
+
+### 2. Remove managed Agent Skills
+
+Use only the clients that were installed:
+
+```console
+uvx readndraft-imap-mcp@latest skill uninstall codex
+uvx readndraft-imap-mcp@latest skill uninstall claude-code
+```
+
+The installer refuses to remove a user-modified or unmanaged skill. Inspect it
+manually rather than deleting it blindly.
+
+### 3. Remove accounts and OS credentials
+
+Skip this step when retaining accounts for a later reinstall. For a complete
+removal, list accounts and delete each alias through the interactive command:
+
+```console
+uvx readndraft-imap-mcp@latest account list
+uvx readndraft-imap-mcp@latest account delete ALIAS
+```
+
+`account delete` requires exact confirmation and removes the corresponding
+password or app password from Windows Credential Manager or the Linux Secret
+Service keyring. Do this before manually deleting application state; otherwise
+the account metadata needed to identify a stored credential may be lost.
+
+### 4. Optionally remove remaining local data
+
+Run `uvx readndraft-imap-mcp@latest doctor` to display the private state path and
+`uvx readndraft-imap-mcp@latest attachments path` to display the fixed attachment
+exchange directories. Inspect them before manually removing anything. Remaining
+data can include:
+
+- integrity-chained audit history;
+- draft provenance needed to update MCP-created drafts;
+- downloaded and upload-staging attachments;
+- the local IPC key and broker state;
+- an unused `approvals` directory left by an older build.
+
+Remove these directories only when their audit, recovery, and attachment data
+is no longer needed. readNdraft does not delete them automatically.
 
 There is no permanently installed uv tool to uninstall when readNdraft is used
-only through `uvx`.
+only through `uvx`. uv may retain ordinary download/build cache entries shared
+with other tools; clearing uv's global cache is not required to uninstall
+readNdraft.
 
 ## Security and privacy
 
