@@ -8,7 +8,7 @@ import pytest
 
 from readndraft_imap_mcp.cli import main
 from readndraft_imap_mcp.platform.paths import AppPaths
-from readndraft_imap_mcp.platform.setup import run_setup
+from readndraft_imap_mcp.platform.setup import _print_client_setup, run_setup
 from readndraft_imap_mcp.platform.skill import (
     install_skill,
     skill_status,
@@ -77,6 +77,25 @@ def test_setup_authenticates_then_persists_secret_and_metadata(tmp_path) -> None
     metadata = json.loads(_paths(tmp_path).accounts_file.read_text(encoding="utf-8"))
     assert metadata[0]["username"] == "leo@example.com"
     assert "password" not in repr(metadata).casefold()
+
+
+def test_setup_prints_isolated_copy_block_and_next_steps(capsys, tmp_path) -> None:
+    config = "[mcp_servers.readndraft]\nrequired = true\n"
+    skill_target = tmp_path / "readndraft-email"
+
+    _print_client_setup("codex", config, skill_target=skill_target)
+
+    output = capsys.readouterr().out
+    copy_block = (
+        "----- COPY START -----\n"
+        "[mcp_servers.readndraft]\n"
+        "required = true\n"
+        "----- COPY END -----"
+    )
+    assert copy_block in output
+    assert f"----- COPY END -----\n\nAgent Skill\nInstalled at: {skill_target}" in output
+    assert "\n\nNext steps\n1. Add the copied configuration" in output
+    assert "uvx readndraft-imap-mcp@latest doctor --online" in output
 
 
 def test_skill_install_is_managed_and_refuses_modified_removal(tmp_path) -> None:
