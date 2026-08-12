@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from email.utils import getaddresses
 from types import MappingProxyType
 from typing import Iterable, Literal, Mapping
 
@@ -17,6 +18,7 @@ class AccountConfig:
     auth_method: Literal["login", "plain"] = "login"
     tls_mode: Literal["implicit"] = "implicit"
     enabled: bool = True
+    sender_address: str | None = None
 
     def __post_init__(self) -> None:
         if not _ACCOUNT_ID_RE.fullmatch(self.account_id):
@@ -27,6 +29,21 @@ class AccountConfig:
             raise ValueError("port must be between 1 and 65535")
         if not self.username.strip():
             raise ValueError("username must be non-empty")
+        if self.sender_address is not None:
+            if any(char in self.sender_address for char in "\r\n"):
+                raise ValueError("invalid sender_address")
+            parsed = getaddresses((self.sender_address,))
+            if (
+                len(parsed) != 1
+                or parsed[0][0]
+                or parsed[0][1] != self.sender_address
+                or "@" not in parsed[0][1]
+            ):
+                raise ValueError("invalid sender_address")
+
+    @property
+    def effective_sender_address(self) -> str:
+        return self.sender_address or self.username
 
     def safe_metadata(self) -> dict[str, str | int | bool]:
         local, separator, domain = self.username.partition("@")
@@ -37,6 +54,7 @@ class AccountConfig:
             "host": self.hostname,
             "port": self.port,
             "enabled": self.enabled,
+            "sender_address": self.effective_sender_address,
         }
 
 
@@ -64,4 +82,3 @@ class AccountRegistry:
         if not account.enabled:
             raise PermissionError("account is disabled")
         return account
-

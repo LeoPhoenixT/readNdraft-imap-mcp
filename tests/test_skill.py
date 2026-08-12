@@ -70,3 +70,18 @@ def test_skill_preserves_security_boundaries() -> None:
         "no approval-token workflow",
     ):
         assert statement in text
+
+
+def test_skill_explains_cross_platform_attachment_location_and_sender() -> None:
+    text = "\n".join(
+        path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md")
+    )
+    for statement in (
+        "saved_path",
+        "absolute path",
+        "do not join paths",
+        "translate `/` and `\\\\`",
+        "sender_address",
+        "pinned account metadata",
+    ):
+        assert statement in text

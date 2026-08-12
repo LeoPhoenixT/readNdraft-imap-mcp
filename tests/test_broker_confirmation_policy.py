@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from email import policy
+from email.parser import BytesParser
 
 from readndraft_imap_mcp.broker import AccountConfig, AccountRegistry, BrokerService
 from readndraft_imap_mcp.drafts import FileDraftStore
@@ -23,6 +25,8 @@ class Credentials:
 
 
 class Client:
+    draft_senders = []
+
     def __init__(self, account, secret):
         pass
 
@@ -39,11 +43,17 @@ class Client:
         return HtmlContent(identity, "<p>safe</p>", ())
 
     def append_draft(self, raw, message_id, attachment_hashes):
+        self.draft_senders.append(
+            BytesParser(policy=policy.default).parsebytes(raw)["From"]
+        )
         return DraftCreationResult(
             "personal", "Drafts", "42", "99", message_id, attachment_hashes
         )
 
     def replace_draft(self, record, raw, message_id, attachment_hashes):
+        self.draft_senders.append(
+            BytesParser(policy=policy.default).parsebytes(raw)["From"]
+        )
         return DraftUpdateResult(
             "personal",
             record.draft_id,
@@ -67,10 +77,18 @@ class Audit:
         self.events.append(event)
 
 
-def build_broker(tmp_path, audit=None) -> BrokerService:
+def build_broker(tmp_path, audit=None, *, sender_address=None) -> BrokerService:
     return BrokerService(
         AccountRegistry(
-            [AccountConfig("personal", "pinned.example.com", 993, "leo@example.com")]
+            [
+                AccountConfig(
+                    "personal",
+                    "pinned.example.com",
+                    993,
+                    "login@internal.example",
+                    sender_address=sender_address,
+                )
+            ]
         ),
         Credentials(),
         Client,
@@ -114,6 +132,26 @@ def test_draft_creation_and_update_have_no_runtime_approval(tmp_path) -> None:
         "update_draft",
     ]
     assert all(event.approval_required is False for event in audit.events)
+
+
+def test_drafts_use_pinned_sender_for_create_and_update(tmp_path) -> None:
+    Client.draft_senders = []
+    broker = build_broker(tmp_path, Audit(), sender_address="leo@example.com")
+    created = asyncio.run(
+        broker.create_draft(
+            "personal", to=("recipient@example.com",), subject="one", body="body"
+        )
+    )
+    asyncio.run(
+        broker.update_draft(
+            "personal",
+            created.draft_id,
+            to=("recipient@example.com",),
+            subject="two",
+            body="body",
+        )
+    )
+    assert Client.draft_senders == ["leo@example.com", "leo@example.com"]
 
 
 def test_large_mutation_batch_has_no_runtime_approval(tmp_path) -> None:

@@ -31,6 +31,7 @@ class SavedAttachment:
     content_type: str
     size: int
     sha256: str
+    saved_path: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -168,7 +169,14 @@ class AttachmentExchange:
                     else:
                         os.unlink(name, dir_fd=directory_descriptor)
                     raise
-                return SavedAttachment(name, safe, content_type, len(content), hashlib.sha256(content).hexdigest())
+                return SavedAttachment(
+                    name,
+                    safe,
+                    content_type,
+                    len(content),
+                    hashlib.sha256(content).hexdigest(),
+                    str(path),
+                )
         finally:
             if directory_descriptor is not None:
                 os.close(directory_descriptor)

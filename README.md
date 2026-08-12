@@ -125,7 +125,8 @@ while uv downloads the pinned package. If a stored password has changed, run
 - Read safe headers and plain text without setting the Seen flag.
 - Batch-read plain text for up to 10 selected messages across 2 accounts.
 - Read sanitized HTML without loading remote content.
-- Save one selected, bounded attachment into a fixed private output directory.
+- Save one selected, bounded attachment into a fixed private output directory and
+  return its absolute native-platform path.
 - Star/unstar and mark read/unread without replacing unrelated flags.
 - Batch one star or read state across up to 50 selected messages and 3 accounts;
   batches return ordered per-item results.
@@ -141,9 +142,11 @@ The setup wizard is recommended. Individual human-only commands are also
 available:
 
 ```console
-uvx readndraft-imap-mcp account add work --host imap.example.com --username leo@example.com
+uvx readndraft-imap-mcp account add work --host imap.example.com --username login@imap.example.com --sender-address leo@example.com
 uvx readndraft-imap-mcp account test work
 uvx readndraft-imap-mcp account list
+uvx readndraft-imap-mcp account set-sender work leo@example.com
+uvx readndraft-imap-mcp account clear-sender work
 uvx readndraft-imap-mcp account rotate-secret work
 uvx readndraft-imap-mcp account disable work
 uvx readndraft-imap-mcp account enable work
@@ -151,7 +154,11 @@ uvx readndraft-imap-mcp account delete work
 ```
 
 Passwords are accepted only through a hidden local prompt. Account configuration
-and credential operations are not MCP tools.
+and credential operations are not MCP tools. `sender_address` controls the visible
+`From` header of drafts and may differ from the IMAP login username. If omitted or
+cleared, it falls back to the username. MCP `list_accounts` exposes the effective
+sender so an agent can confirm it, but MCP cannot change it or override it per
+draft.
 
 ## Configure another MCP client
 
@@ -369,7 +376,8 @@ always untrusted input and remote images or URLs are never fetched automatically
 MCP tools never accept arbitrary local paths: draft files come only from the
 readNdraft attachment input directory and downloaded attachments are written
 only to its output directory. Run `readndraft-imap-mcp attachments path` to
-locate them.
+locate them. `save_attachment` also returns the saved file's absolute path using
+the MCP server host's native path format; clients must use that value verbatim.
 
 Read [SECURITY.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/SECURITY.md)
 and the canonical [PLAN.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/PLAN.md) for the

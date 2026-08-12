@@ -47,6 +47,9 @@ def test_output_never_overwrites_and_returns_digest(tmp_path) -> None:
     assert second.saved_name != first.saved_name
     assert (value.output_dir / first.saved_name).read_bytes() == b"one"
     assert (value.output_dir / second.saved_name).read_bytes() == b"two"
+    assert first.saved_path == str((value.output_dir / "report.txt").resolve())
+    assert second.saved_path == str((value.output_dir / second.saved_name).resolve())
+    assert os.path.isabs(second.saved_path)
     assert len(second.sha256) == 64
     if os.name != "nt":
         assert (value.output_dir / first.saved_name).stat().st_mode & 0o077 == 0
