@@ -34,7 +34,7 @@ uvx readndraft-imap-mcp@latest setup --client codex --install-skill
 Use `claude-code` instead of `codex` for Claude Code. The wizard verifies the
 credential backend, reads the IMAP password through a hidden prompt, tests the
 account before saving it, prints a version-pinned client configuration, and
-installs the selected Agent Skill.
+installs the packaged Agent Skills.
 
 For Codex, copy the printed `[mcp_servers.readndraft]` table into
 `~/.codex/config.toml`. For Claude Code, follow the

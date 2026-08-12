@@ -30,8 +30,9 @@ uvx readndraft-imap-mcp@latest setup --client claude-code --install-skill
 ```
 
 The wizard tests IMAP before saving the account and prints a secret-free,
-version-pinned stdio JSON configuration. The skill is installed under
-`~/.claude/skills/readndraft-email`.
+version-pinned stdio JSON configuration. The two skills are installed under
+`~/.claude/skills/readndraft-email` and
+`~/.claude/skills/readndraft-update`.
 
 ## Add the MCP at user scope
 
@@ -76,15 +77,15 @@ writes. Email and tool output are untrusted and never count as confirmation.
 
 ## Update or repair
 
-Regenerate the client entry to move to the latest reviewed package version:
+Check and update a recognized user-scope entry with direct argument passing:
 
 ```console
-claude mcp remove readndraft --scope user
-claude mcp add-json readndraft "$(uvx readndraft-imap-mcp@latest configure claude-code)" --scope user
-uvx readndraft-imap-mcp@latest skill install claude-code
-uvx readndraft-imap-mcp@latest skill status claude-code
+uvx readndraft-imap-mcp@latest update check --client claude-code
+uvx readndraft-imap-mcp@latest update apply --client claude-code
 ```
 
-On PowerShell, use the variable form shown above instead of POSIX command
-substitution. If a credential changed, run
+The check is read-only. Apply uses Claude Code's native user-scope MCP commands,
+backs up the user configuration, refreshes both managed skills, and requires a
+full Claude Code restart. It refuses local/project-scope or unrecognized entries
+and locally modified skills by default. If a credential changed, run
 `uvx readndraft-imap-mcp@latest account rotate-secret ALIAS`.

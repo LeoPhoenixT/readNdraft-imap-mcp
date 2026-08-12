@@ -6,7 +6,7 @@ from pathlib import Path
 
 from readndraft_imap_mcp.cli import main
 from readndraft_imap_mcp.platform.paths import AppPaths
-from readndraft_imap_mcp.platform.skill import bundled_skill_dir, install_skill
+from readndraft_imap_mcp.platform.skill import SKILL_NAMES, bundled_skill_dir, install_skill
 
 
 def run() -> None:
@@ -18,16 +18,20 @@ def run() -> None:
     }
     assert "readndraft-imap-mcp" in scripts
     assert "readndraft-approve" not in scripts
-    source = bundled_skill_dir()
+    source = bundled_skill_dir("readndraft-email")
     assert (source / "SKILL.md").is_file()
     assert (source / "references" / "tool-workflows.md").is_file()
     assert (source / "references" / "confirmation-and-errors.md").is_file()
+    assert (bundled_skill_dir("readndraft-update") / "SKILL.md").is_file()
     assert main(["--help"]) == 0
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary).resolve()
         paths = AppPaths(root / "config", root / "state", root / "runtime")
-        target = install_skill("codex", paths=paths, home=root / "home")
-        assert (target / "SKILL.md").is_file()
+        for skill_name in SKILL_NAMES:
+            target = install_skill(
+                "codex", paths=paths, home=root / "home", skill_name=skill_name
+            )
+            assert (target / "SKILL.md").is_file()
     print(f"Distribution smoke test passed for {distribution.version}.")
 
 

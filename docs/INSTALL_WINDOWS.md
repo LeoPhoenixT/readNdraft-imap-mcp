@@ -26,7 +26,7 @@ uvx readndraft-imap-mcp@latest setup --client codex --install-skill
 Use `chatgpt-desktop` or `claude-code` for another client. The wizard checks
 Windows Credential Manager, reads the IMAP password through a hidden prompt,
 tests IMAP before saving the account, prints a secret-free version-pinned client
-configuration, and installs the selected Agent Skill.
+configuration, and installs the packaged Agent Skills.
 
 For Codex, copy the printed `[mcp_servers.readndraft]` table into
 `%USERPROFILE%\.codex\config.toml`. For Claude Code, follow the

@@ -1,0 +1,4 @@
+interface:
+  display_name: "readNdraft Update"
+  short_description: "Safely check and update readNdraft clients"
+  default_prompt: "Use $readndraft-update to check whether readNdraft needs an update."
