@@ -24,6 +24,8 @@ EXPECTED_TOOLS = {
     "get_email",
     "save_attachment",
     "create_draft",
+    "move_email",
+    "move_emails_batch",
 }
 
 

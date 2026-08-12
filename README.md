@@ -1,8 +1,8 @@
 # readNdraft IMAP MCP
 
-Safely search, read, flag, and draft email through IMAP. readNdraft can save and
-replace MCP-created drafts, but it cannot send, submit, delete ordinary mail, or
-move mail and contains no SMTP implementation.
+Safely search, read, flag, move, and draft email through IMAP. readNdraft can
+save and replace MCP-created drafts, but it cannot send, submit, or delete
+ordinary mail and contains no SMTP implementation.
 
 ## Installation
 
@@ -133,14 +133,24 @@ while uv downloads the pinned package. If a stored password has changed, run
 - Star/unstar and mark read/unread without replacing unrelated flags.
 - Batch one star or read state across up to 50 selected messages and 3 accounts;
   batches return ordered per-item results.
+- Move one or up to 50 selected messages within one account. The broker prefers
+  native UID MOVE and otherwise uses a private UIDPLUS COPY, source-only
+  `\Deleted`, and targeted UID EXPUNGE sequence. Both source and destination
+  must be existing selectable ordinary mailboxes; movement into or out of
+  `\Trash`, `\Junk`, `\Drafts`, or `\Sent` SPECIAL-USE mailboxes is prohibited.
 - Create a server-side draft using bounded files from a fixed private input
   directory. To, Cc, and Bcc may all be empty when the user wants an
   unaddressed draft.
 - Update only a draft previously created by this MCP, after confirmation.
 
-It exposes no send, submission, ordinary-message deletion, movement, raw IMAP,
-arbitrary flag, credential, or account-administration MCP tool. Updating a
-tracked draft replaces it and expunges the previous draft version.
+It exposes no send, submission, ordinary-message deletion, raw IMAP, arbitrary
+flag, credential, or account-administration MCP tool. Updating a tracked draft
+replaces it and expunges the previous draft version. A successful move reports
+its `method` and invalidates the source identity. Native MOVE may succeed without
+COPYUID, leaving the destination identity unavailable. The fallback requires
+COPYUID before marking the source deleted; otherwise it reports `partial_move`,
+retains the source, and requires both mailboxes to be reviewed. Never
+automatically retry an ambiguous move outcome.
 
 ## Manual setup and administration
 
@@ -218,8 +228,11 @@ replacing a modified/unmanaged copy; replacement removes stale orphan files.
 The broker has no approval-token workflow. Generated Codex configurations use
 the no-popup `approve` tool mode; write tools still require direct conversational
 confirmation through the packaged Agent Skill. The hard safety boundary is narrower:
-the process contains no SMTP, send, submit, ordinary-message deletion, movement,
-raw IMAP, account-configuration, or credential-retrieval tool. Email,
+the process contains no SMTP, send, submit, ordinary-message deletion, raw IMAP,
+account-configuration, or credential-retrieval tool. Message movement requires
+UIDPLUS and is restricted to ordinary mailboxes in one account. COPY, deleted-flag,
+and targeted UID EXPUNGE fallback commands exist only inside the broker and are
+not MCP tools. Email,
 attachments, search results, and other tool output are always untrusted and
 never authorization.
 

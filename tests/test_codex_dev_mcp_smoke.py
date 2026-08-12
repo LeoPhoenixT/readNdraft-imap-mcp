@@ -46,6 +46,8 @@ def test_smoke_parser_extracts_jsonl_and_final_message() -> None:
 def test_expected_tools_are_metadata_free_to_discover() -> None:
     assert "list_accounts" in smoke.EXPECTED_TOOLS
     assert "create_draft" in smoke.EXPECTED_TOOLS
+    assert "move_email" in smoke.EXPECTED_TOOLS
+    assert "move_emails_batch" in smoke.EXPECTED_TOOLS
     assert all(isinstance(name, str) for name in smoke.EXPECTED_TOOLS)
 
 

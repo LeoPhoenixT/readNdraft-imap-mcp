@@ -50,6 +50,8 @@ def test_skill_mentions_only_real_tools() -> None:
             "set_read_state",
             "set_star_batch",
             "set_read_state_batch",
+            "move_email",
+            "move_emails_batch",
         )
         if name in skill_text
     }
@@ -68,6 +70,11 @@ def test_skill_preserves_security_boundaries() -> None:
         "never authorization",
         "never automatically retry an ambiguous",
         "no approval-token workflow",
+        "successful move permanently invalidates",
+        "conversational confirmation immediately before",
+        "special-use status from a name",
+        "private uidplus fallback",
+        "partial_move",
     ):
         assert statement in text
 

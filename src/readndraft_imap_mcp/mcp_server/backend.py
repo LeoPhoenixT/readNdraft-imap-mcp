@@ -5,6 +5,7 @@ from typing import Protocol
 from readndraft_imap_mcp.imap.models import (
     AttachmentContent,
     BatchFlagChange,
+    BatchMoveResult,
     BatchMessageContent,
     DraftCreationResult,
     DraftUpdateResult,
@@ -13,6 +14,7 @@ from readndraft_imap_mcp.imap.models import (
     Mailbox,
     MessageContent,
     MessageIdentity,
+    MoveResult,
     SearchFilters,
     SearchPage,
     SearchResult,
@@ -111,6 +113,20 @@ class ReadOnlyBroker(Protocol):
         client_id: str | None = None,
     ) -> tuple[BatchFlagChange, ...]: ...
 
+    async def move_email(
+        self,
+        identity: MessageIdentity,
+        destination_mailbox: str,
+        client_id: str | None = None,
+    ) -> MoveResult: ...
+
+    async def move_emails_batch(
+        self,
+        identities: tuple[MessageIdentity, ...],
+        destination_mailbox: str,
+        client_id: str | None = None,
+    ) -> tuple[BatchMoveResult, ...]: ...
+
 
 class UnavailableBroker:
     """Fail-closed placeholder until the local broker transport is wired."""
@@ -167,4 +183,12 @@ class UnavailableBroker:
         return self._unavailable()
 
     async def set_star_batch(self, identities, starred, client_id=None):
+        return self._unavailable()
+
+    async def move_email(self, identity, destination_mailbox, client_id=None):
+        return self._unavailable()
+
+    async def move_emails_batch(
+        self, identities, destination_mailbox, client_id=None
+    ):
         return self._unavailable()

@@ -8,7 +8,9 @@ from typing import Literal, Protocol
 @dataclass(frozen=True, slots=True)
 class AuditEvent:
     timestamp: str
-    operation: Literal["set_star", "set_read_state", "create_draft", "update_draft"]
+    operation: Literal[
+        "set_star", "set_read_state", "move_email", "create_draft", "update_draft"
+    ]
     account_id: str
     mailbox: str
     uid: str
@@ -21,6 +23,10 @@ class AuditEvent:
     new_state: bool | None = None
     error_category: str | None = None
     client_id: str | None = None
+    destination_mailbox: str | None = None
+    destination_uid_validity: str | None = None
+    destination_uid: str | None = None
+    movement_method: Literal["uid_move", "uidplus_copy_delete"] | None = None
 
     @classmethod
     def mutation(
@@ -53,6 +59,41 @@ class AuditEvent:
             new_state=new_state,
             error_category=error_category,
             client_id=client_id,
+        )
+
+    @classmethod
+    def movement(
+        cls,
+        *,
+        account_id: str,
+        mailbox: str,
+        uid: str,
+        destination_mailbox: str,
+        success: bool,
+        duration_ms: int,
+        destination_uid_validity: str | None = None,
+        destination_uid: str | None = None,
+        movement_method: Literal["uid_move", "uidplus_copy_delete"] | None = None,
+        error_category: str | None = None,
+        client_id: str | None = None,
+    ) -> "AuditEvent":
+        return cls(
+            timestamp=datetime.now(UTC).isoformat(),
+            operation="move_email",
+            account_id=account_id,
+            mailbox=mailbox,
+            uid=uid,
+            request_size=0,
+            approval_required=False,
+            approval_result="not_required",
+            success=success,
+            duration_ms=max(0, duration_ms),
+            error_category=error_category,
+            client_id=client_id,
+            destination_mailbox=destination_mailbox,
+            destination_uid_validity=destination_uid_validity,
+            destination_uid=destination_uid,
+            movement_method=movement_method,
         )
 
     @classmethod

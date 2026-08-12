@@ -14,10 +14,15 @@ from readndraft_imap_mcp.audit import AuditEvent, AuditSink, AuditUnavailableErr
 from readndraft_imap_mcp.attachments import AttachmentExchange, InputAttachment, SavedAttachment
 from readndraft_imap_mcp.credentials import CredentialStore
 from readndraft_imap_mcp.drafts import FileDraftStore
-from readndraft_imap_mcp.imap.client import ImapClient, ImapClientError
+from readndraft_imap_mcp.imap.client import (
+    ImapClient,
+    ImapClientError,
+    ImapMovePartialError,
+)
 from readndraft_imap_mcp.imap.models import (
     AttachmentContent,
     BatchFlagChange,
+    BatchMoveResult,
     BatchMessageContent,
     DraftCreationResult,
     DraftUpdateResult,
@@ -26,6 +31,7 @@ from readndraft_imap_mcp.imap.models import (
     Mailbox,
     MessageContent,
     MessageIdentity,
+    MoveResult,
     SearchFilters,
     SearchPage,
     SearchResult,
@@ -56,6 +62,8 @@ class BatchItemOutcome(Generic[T]):
 
 
 def _batch_error(exc: Exception) -> str:
+    if isinstance(exc, ImapMovePartialError):
+        return "partial_move"
     if isinstance(exc, PermissionError):
         return "permission_denied"
     if isinstance(exc, KeyError):
@@ -867,3 +875,119 @@ class BrokerService:
         return await self._batch_mutate(
             identities, "set_star", starred, client_id
         )
+
+    async def move_email(
+        self,
+        identity: MessageIdentity,
+        destination_mailbox: str,
+        client_id: str | None = None,
+    ) -> MoveResult:
+        if self._audit is None:
+            raise AuditUnavailableError("audit sink is required for mutations")
+        started = perf_counter()
+        try:
+            result = await self._client_call(
+                identity.account_id,
+                lambda client: client.move_email(identity, destination_mailbox),
+                response_timeout=False,
+            )
+        except Exception as exc:
+            await self._audit.record(
+                AuditEvent.movement(
+                    account_id=identity.account_id,
+                    mailbox=identity.mailbox,
+                    uid=identity.uid,
+                    destination_mailbox=destination_mailbox,
+                    success=False,
+                    duration_ms=int((perf_counter() - started) * 1000),
+                    error_category=_batch_error(exc),
+                    client_id=client_id,
+                )
+            )
+            raise
+        destination = result.destination_identity
+        await self._audit.record(
+            AuditEvent.movement(
+                account_id=identity.account_id,
+                mailbox=identity.mailbox,
+                uid=identity.uid,
+                destination_mailbox=result.destination_mailbox,
+                destination_uid_validity=(
+                    destination.uid_validity if destination is not None else None
+                ),
+                destination_uid=destination.uid if destination is not None else None,
+                movement_method=result.method,
+                success=True,
+                duration_ms=int((perf_counter() - started) * 1000),
+                client_id=client_id,
+            )
+        )
+        return result
+
+    async def move_emails_batch(
+        self,
+        identities: tuple[MessageIdentity, ...],
+        destination_mailbox: str,
+        client_id: str | None = None,
+    ) -> tuple[BatchMoveResult, ...]:
+        if self._audit is None:
+            raise AuditUnavailableError("audit sink is required for mutations")
+        if not identities or len(identities) > 50:
+            raise ValueError("batch must contain between 1 and 50 identities")
+        keys = [
+            (item.account_id, item.mailbox, item.uid_validity, item.uid)
+            for item in identities
+        ]
+        if len(set(keys)) != len(keys):
+            raise ValueError("batch identities must be unique")
+        account_ids = {item.account_id for item in identities}
+        if len(account_ids) != 1:
+            raise ValueError("move batch must belong to exactly one account")
+        account_id = identities[0].account_id
+        started = perf_counter()
+        try:
+            outcomes = await self._batch_client_call(
+                account_id,
+                identities,
+                lambda client, identity: client.move_email(
+                    identity, destination_mailbox
+                ),
+                max_items=50,
+                response_timeout=False,
+            )
+        except Exception as exc:
+            outcomes = tuple(
+                BatchItemOutcome[MoveResult](error=_batch_error(exc))
+                for _ in identities
+            )
+        duration_ms = int((perf_counter() - started) * 1000)
+        results: list[BatchMoveResult] = []
+        for identity, outcome in zip(identities, outcomes, strict=True):
+            move = outcome.value
+            destination = move.destination_identity if move is not None else None
+            await self._audit.record(
+                AuditEvent.movement(
+                    account_id=identity.account_id,
+                    mailbox=identity.mailbox,
+                    uid=identity.uid,
+                    destination_mailbox=destination_mailbox,
+                    destination_uid_validity=(
+                        destination.uid_validity if destination is not None else None
+                    ),
+                    destination_uid=(destination.uid if destination is not None else None),
+                    movement_method=move.method if move is not None else None,
+                    success=move is not None,
+                    duration_ms=duration_ms,
+                    error_category=outcome.error,
+                    client_id=client_id,
+                )
+            )
+            results.append(
+                BatchMoveResult(
+                    identity=identity,
+                    ok=move is not None,
+                    move=move,
+                    error=outcome.error,
+                )
+            )
+        return tuple(results)
