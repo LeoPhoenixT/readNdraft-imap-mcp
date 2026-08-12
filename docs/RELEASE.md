@@ -15,6 +15,8 @@ Publishing is intentionally separate from normal CI.
 9. Publish to TestPyPI and complete clean-machine uvx tests.
 10. Complete real Windows, Linux, target-client, and HKTV IMAP acceptance.
 11. Create a protected version tag to publish to PyPI through trusted identity.
+    After publishing succeeds, the workflow creates the matching GitHub Release
+    with generated release notes.
 
 Never place a PyPI token in the repository. Production publication remains
 blocked until Trusted Publisher setup and real-machine acceptance are completed

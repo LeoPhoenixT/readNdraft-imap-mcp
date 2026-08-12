@@ -108,3 +108,17 @@ jobs:
 
       - name: Publish through trusted identity
         run: uv publish --trusted-publishing always
+
+  release:
+    needs: [publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${{ github.ref_name }}"
+          --title "readNdraft IMAP MCP ${{ github.ref_name }}"
+          --generate-notes
