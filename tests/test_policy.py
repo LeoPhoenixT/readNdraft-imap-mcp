@@ -62,6 +62,27 @@ def test_no_broad_expunge_fallback() -> None:
     assert 'uid("EXPUNGE", record.uid)' in source
 
 
+def test_message_move_fallback_is_private_and_uses_targeted_uid_expunge() -> None:
+    client = Path("src/readndraft_imap_mcp/imap/client.py").read_text(
+        encoding="utf-8"
+    )
+    frontend = "\n".join(
+        path.read_text(encoding="utf-8").casefold()
+        for path in Path("src/readndraft_imap_mcp/mcp_server").rglob("*.py")
+    )
+    assert 'command("UID", "MOVE"' in client
+    assert 'self.imap.uid("EXPUNGE", identity.uid)' in client
+    assert ".expunge(" not in client.casefold()
+    for forbidden_tool in (
+        "copy_email",
+        "delete_email",
+        "expunge_email",
+        "set_deleted",
+        "raw_imap",
+    ):
+        assert f"def {forbidden_tool}" not in frontend
+
+
 def test_repository_security_check_passes() -> None:
     path = Path("scripts/security_check.py").resolve()
     spec = importlib.util.spec_from_file_location("security_check", path)

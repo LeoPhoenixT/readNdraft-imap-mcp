@@ -9,6 +9,7 @@ from readndraft_imap_mcp.imap.models import (
     AttachmentContent,
     AttachmentMetadata,
     BatchFlagChange,
+    BatchMoveResult,
     BatchMessageContent,
     DraftCreationResult,
     DraftUpdateResult,
@@ -17,6 +18,7 @@ from readndraft_imap_mcp.imap.models import (
     Mailbox,
     MessageContent,
     MessageIdentity,
+    MoveResult,
     SearchPage,
     SearchResult,
     SearchTarget,
@@ -137,6 +139,18 @@ class FakeBroker:
         change = FlagChange(IDENTITY, "starred", True, True, (), (r"\Flagged",))
         return (BatchFlagChange(IDENTITY, True, change),)
 
+    async def move_email(self, identity, destination_mailbox, client_id=None):
+        assert (identity, destination_mailbox) == (IDENTITY, "Archive")
+        destination = MessageIdentity("personal", "Archive", "77", "99")
+        return MoveResult(IDENTITY, "Archive", destination)
+
+    async def move_emails_batch(
+        self, identities, destination_mailbox, client_id=None
+    ):
+        assert (identities, destination_mailbox) == ((IDENTITY,), "Archive")
+        move = await self.move_email(IDENTITY, destination_mailbox, client_id)
+        return (BatchMoveResult(IDENTITY, True, move),)
+
 
 async def exercise_server() -> None:
     server = create_server(FakeBroker())
@@ -158,6 +172,8 @@ async def exercise_server() -> None:
             "set_read_state",
             "set_read_state_batch",
             "set_star_batch",
+            "move_email",
+            "move_emails_batch",
         }
         schemas = repr([tool.inputSchema for tool in listed.tools]).casefold()
         for forbidden in ("password", "credential", "hostname", "raw_imap"):
@@ -179,6 +195,8 @@ async def exercise_server() -> None:
         assert tools["create_draft"].annotations.idempotentHint is False
         assert not tools["create_draft"].meta
         assert tools["update_draft"].annotations.destructiveHint is True
+        assert tools["move_email"].annotations.destructiveHint is True
+        assert tools["move_email"].annotations.idempotentHint is False
 
         accounts = await session.call_tool("list_accounts")
         assert accounts.isError is False
@@ -360,6 +378,39 @@ async def exercise_server() -> None:
         )
         assert batch_starred.isError is False, batch_starred.content
         assert batch_starred.structuredContent["result"][0]["change"]["state"] == "starred"
+
+        moved = await session.call_tool(
+            "move_email",
+            {
+                "account_id": "personal",
+                "mailbox": "INBOX",
+                "uid_validity": "42",
+                "uid": "7",
+                "destination_mailbox": "Archive",
+            },
+        )
+        assert moved.isError is False, moved.content
+        assert moved.structuredContent["destination_identity"]["uid"] == "99"
+        assert moved.structuredContent["method"] == "uid_move"
+
+        batch_moved = await session.call_tool(
+            "move_emails_batch",
+            {
+                "identities": [
+                    {
+                        "account_id": "personal",
+                        "mailbox": "INBOX",
+                        "uid_validity": "42",
+                        "uid": "7",
+                    }
+                ],
+                "destination_mailbox": "Archive",
+            },
+        )
+        assert batch_moved.isError is False, batch_moved.content
+        assert batch_moved.structuredContent["result"][0]["move"][
+            "destination_mailbox"
+        ] == "Archive"
 
         rejected = await session.call_tool(
             "search_emails", {"accounts": ["personal"], "limit": 501}

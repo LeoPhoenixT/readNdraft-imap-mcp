@@ -9,10 +9,13 @@ def test_readme_documents_uvx_setup_security_and_support() -> None:
         "uvx readndraft-imap-mcp@latest setup",
         "uvx readndraft-imap-mcp doctor --online",
         "~/.agents/skills",
-            "cannot send, submit, delete ordinary mail",
+        "cannot send, submit, or delete",
         "Batch-read plain text for up to 10 selected messages",
         "## Authorization boundary",
         "never authorization",
+        "broker prefers",
+        "not MCP tools",
+        "ambiguous move outcome",
     ):
         assert required in text
     assert "uvx readndraft-imap-mcp approve" not in text

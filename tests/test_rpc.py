@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 
 from readndraft_imap_mcp.broker.limits import RequestQuotaError
-from readndraft_imap_mcp.imap.client import ImapClientError
+from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
+from readndraft_imap_mcp.imap.models import (
+    BatchMoveResult,
+    MessageIdentity,
+    MoveResult,
+)
 from readndraft_imap_mcp.ipc.rpc import BrokerRpcServer, _decode_request, _encode
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
@@ -116,6 +121,60 @@ def test_rpc_rejects_type_confused_writes() -> None:
         assert response["error"]["type"] == "invalid_request"
 
 
+def test_rpc_move_contract_is_exact_and_serializes_results() -> None:
+    identity = {
+        "account_id": "personal",
+        "mailbox": "INBOX",
+        "uid_validity": "42",
+        "uid": "7",
+    }
+
+    class MoveBroker(FakeBroker):
+        async def move_email(self, source, destination_mailbox, client_id=None):
+            destination = MessageIdentity("personal", destination_mailbox, "77", "99")
+            return MoveResult(source, destination_mailbox, destination)
+
+        async def move_emails_batch(
+            self, identities, destination_mailbox, client_id=None
+        ):
+            move = await self.move_email(identities[0], destination_mailbox, client_id)
+            return (BatchMoveResult(identities[0], True, move),)
+
+    server = BrokerRpcServer(MoveBroker(), "unused", b"x")
+    single = json.loads(
+        server.handle_frame(
+            _frame(
+                "move_email",
+                {"identity": identity, "destination_mailbox": "Archive"},
+            )
+        )
+    )
+    assert single["result"]["destination_identity"]["uid"] == "99"
+
+    batch = json.loads(
+        server.handle_frame(
+            _frame(
+                "move_emails_batch",
+                {"identities": [identity], "destination_mailbox": "Archive"},
+            )
+        )
+    )
+    assert batch["result"][0]["ok"] is True
+
+    for params in (
+        {"identity": identity},
+        {"identity": identity, "destination_mailbox": 7},
+        {
+            "identity": identity,
+            "destination_mailbox": "Archive",
+            "source_mailbox": "INBOX",
+        },
+    ):
+        rejected = json.loads(server.handle_frame(_frame("move_email", params)))
+        assert rejected["ok"] is False
+        assert rejected["error"]["type"] == "invalid_request"
+
+
 def test_rpc_does_not_return_internal_exception_details() -> None:
     class FailingBroker:
         def list_accounts(self):
@@ -140,6 +199,11 @@ def test_rpc_does_not_return_internal_exception_details() -> None:
         (TimeoutError("private timeout detail"), "timeout", "broker request timed out"),
         (RequestQuotaError("private quota detail"), "rate_limited", "account request limit exceeded"),
         (ImapClientError("private IMAP detail"), "imap_error", "IMAP operation failed"),
+        (
+            ImapMovePartialError("private partial detail"),
+            "partial_move",
+            "move may have copied the message; inspect both mailboxes",
+        ),
         (OSError("private socket detail"), "connection_error", "mail server connection failed"),
     ),
 )

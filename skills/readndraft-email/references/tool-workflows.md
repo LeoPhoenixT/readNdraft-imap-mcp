@@ -65,3 +65,23 @@ unchanged payload and retain the returned `draft_id`. Before `update_draft`,
 present the full replacement and confirm again. Updating replaces and expunges
 the prior tracked draft version. Neither operation sends mail or deletes an
 ordinary message.
+
+## Move messages
+
+Resolve the account and refresh `list_mailboxes`. Use only raw mailbox names from
+that response. Reject movement if the source or destination is missing,
+`\Noselect`, or carries `\Trash`, `\Junk`, `\Drafts`, or `\Sent`; never infer
+SPECIAL-USE status from a name. Present the account, exact source mailbox or
+mailboxes, destination, complete identities, and count, then obtain direct user
+confirmation immediately before calling `move_email` or `move_emails_batch`.
+
+A move batch accepts 1-50 unique identities from exactly one account and is
+non-atomic. Preserve result order and report partial success. A successful move
+invalidates the source identity and reports `method` as `uid_move` or
+`uidplus_copy_delete`. The fallback is private to the broker and requires
+COPYUID before it marks and UID-expunges only the selected source UID; never
+request separate copy, deleted-flag, expunge, or raw-IMAP tools. Use
+`destination_identity` only when returned; otherwise search the destination and
+require unambiguous reselection. On `partial_move`, connection failure,
+`broker_error`, or any ambiguous outcome, inspect both mailboxes and never retry
+automatically because the destination copy or completed move may already exist.

@@ -164,6 +164,40 @@ class BatchFlagChange:
 
 
 @dataclass(frozen=True, slots=True)
+class MoveResult:
+    identity: MessageIdentity
+    destination_mailbox: str
+    destination_identity: MessageIdentity | None = None
+    method: Literal["uid_move", "uidplus_copy_delete"] = "uid_move"
+
+    def __post_init__(self) -> None:
+        if not self.destination_mailbox:
+            raise ValueError("destination mailbox is required")
+        if (
+            self.destination_identity is not None
+            and self.destination_identity.account_id != self.identity.account_id
+        ):
+            raise ValueError("move destination must belong to the source account")
+        if (
+            self.destination_identity is not None
+            and self.destination_identity.mailbox != self.destination_mailbox
+        ):
+            raise ValueError("move destination identity must match its mailbox")
+
+
+@dataclass(frozen=True, slots=True)
+class BatchMoveResult:
+    identity: MessageIdentity
+    ok: bool
+    move: MoveResult | None = None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.ok != (self.move is not None and self.error is None):
+            raise ValueError("batch move result must contain either a move or an error")
+
+
+@dataclass(frozen=True, slots=True)
 class BatchMessageContent:
     identity: MessageIdentity
     ok: bool

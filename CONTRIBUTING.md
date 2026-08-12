@@ -78,9 +78,10 @@ behavior changes.
 
 - Create a focused branch from `main`.
 - Explain the problem, security impact, and verification performed.
-- Keep send, submit, ordinary-message deletion, movement, raw IMAP, arbitrary
-  flags, account administration, and credential retrieval outside the MCP tool
-  surface.
+- Keep send, submit, ordinary-message deletion, raw IMAP, arbitrary flags,
+  account administration, and credential retrieval outside the MCP tool surface.
+  Preserve movement's native UID MOVE preference, broker-private UIDPLUS
+  fallback, same-account, ordinary-mailbox, confirmation, and audit restrictions.
 - Wait for all GitHub Actions checks to pass before merging.
 
 By contributing, you agree that your contribution is licensed under the

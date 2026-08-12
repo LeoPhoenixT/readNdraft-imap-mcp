@@ -50,6 +50,8 @@ async def _exercise_stdio(tmp_path) -> None:
             "set_read_state",
             "set_star_batch",
             "set_read_state_batch",
+            "move_email",
+            "move_emails_batch",
     }
 
 

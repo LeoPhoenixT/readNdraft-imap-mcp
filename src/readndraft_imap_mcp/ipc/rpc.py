@@ -19,11 +19,12 @@ from typing import Any
 
 from readndraft_imap_mcp.broker.service import BrokerService
 from readndraft_imap_mcp.broker.limits import RequestQuotaError
-from readndraft_imap_mcp.imap.client import ImapClientError
+from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
 from readndraft_imap_mcp.imap.models import (
     AttachmentContent,
     AttachmentMetadata,
     BatchFlagChange,
+    BatchMoveResult,
     BatchMessageContent,
     DraftCreationResult,
     DraftUpdateResult,
@@ -32,6 +33,7 @@ from readndraft_imap_mcp.imap.models import (
     Mailbox,
     MessageContent,
     MessageIdentity,
+    MoveResult,
     SearchFilters,
     SearchPage,
     SearchResult,
@@ -60,6 +62,8 @@ ALLOWED_OPERATIONS = frozenset(
         "set_read_state",
         "set_read_state_batch",
         "set_star_batch",
+        "move_email",
+        "move_emails_batch",
     }
 )
 _PARAMETERS = {
@@ -107,6 +111,14 @@ _PARAMETERS = {
         frozenset({"identities", "enabled"}),
         frozenset({"client_id"}),
     ),
+    "move_email": (
+        frozenset({"identity", "destination_mailbox"}),
+        frozenset({"client_id"}),
+    ),
+    "move_emails_batch": (
+        frozenset({"identities", "destination_mailbox"}),
+        frozenset({"client_id"}),
+    ),
 }
 
 
@@ -119,6 +131,8 @@ class RpcError(RuntimeError):
 
 
 def _safe_error(exc: Exception) -> tuple[str, str]:
+    if isinstance(exc, ImapMovePartialError):
+        return "partial_move", "move may have copied the message; inspect both mailboxes"
     if isinstance(exc, PermissionError):
         return "permission_denied", "request denied"
     if isinstance(exc, KeyError):
@@ -186,7 +200,9 @@ def _string_list(value: object, *, maximum: int) -> bool:
 
 
 def _validate_parameter_types(operation: str, params: dict[str, Any]) -> None:
-    for key in ("account_id", "mailbox", "attachment_id", "draft_id"):
+    for key in (
+        "account_id", "mailbox", "destination_mailbox", "attachment_id", "draft_id"
+    ):
         if key in params and not _string(params[key]):
             raise ValueError("invalid RPC parameter type")
     if "limit" in params and (
@@ -389,6 +405,23 @@ class BrokerRpcServer:
                 for item in await self.broker.set_star_batch(
                     tuple(_identity(value) for value in params["identities"]),
                     params["enabled"],
+                    params.get("client_id"),
+                )
+            ]
+        if operation == "move_email":
+            return asdict(
+                await self.broker.move_email(
+                    _identity(params["identity"]),
+                    params["destination_mailbox"],
+                    params.get("client_id"),
+                )
+            )
+        if operation == "move_emails_batch":
+            return [
+                asdict(item)
+                for item in await self.broker.move_emails_batch(
+                    tuple(_identity(value) for value in params["identities"]),
+                    params["destination_mailbox"],
                     params.get("client_id"),
                 )
             ]
@@ -677,6 +710,30 @@ class IpcBrokerClient:
         )
         return tuple(_batch_flag_change(item) for item in items)
 
+    async def move_email(self, identity, destination_mailbox, client_id=None):
+        item = await self._request(
+            "move_email",
+            {
+                "identity": asdict(identity),
+                "destination_mailbox": destination_mailbox,
+                "client_id": client_id,
+            },
+        )
+        return _move_result(item)
+
+    async def move_emails_batch(
+        self, identities, destination_mailbox, client_id=None
+    ):
+        items = await self._request(
+            "move_emails_batch",
+            {
+                "identities": [asdict(item) for item in identities],
+                "destination_mailbox": destination_mailbox,
+                "client_id": client_id,
+            },
+        )
+        return tuple(_batch_move_result(item) for item in items)
+
 
 def _json_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     return {key: list(value) if isinstance(value, tuple) else value for key, value in kwargs.items()}
@@ -686,6 +743,27 @@ def _flag_change(item: dict[str, Any]) -> FlagChange:
     return FlagChange(
         identity=MessageIdentity(**item["identity"]), state=item["state"], enabled=item["enabled"],
         changed=item["changed"], old_flags=tuple(item["old_flags"]), new_flags=tuple(item["new_flags"]),
+    )
+
+
+def _move_result(item: dict[str, Any]) -> MoveResult:
+    destination = item["destination_identity"]
+    return MoveResult(
+        identity=MessageIdentity(**item["identity"]),
+        destination_mailbox=item["destination_mailbox"],
+        destination_identity=(
+            MessageIdentity(**destination) if destination is not None else None
+        ),
+        method=item["method"],
+    )
+
+
+def _batch_move_result(item: dict[str, Any]) -> BatchMoveResult:
+    return BatchMoveResult(
+        identity=MessageIdentity(**item["identity"]),
+        ok=item["ok"],
+        move=_move_result(item["move"]) if item["move"] is not None else None,
+        error=item["error"],
     )
 
 
