@@ -1,0 +1,4 @@
+interface:
+  display_name: "readNdraft Local MCP Test"
+  short_description: "Test the repository-local readNdraft MCP safely"
+  default_prompt: "Use $readndraft-local-mcp-test to verify this checkout's local MCP integration."
