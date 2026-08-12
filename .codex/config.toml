@@ -1,7 +1,7 @@
 [mcp_servers.readndraft_dev]
 command = "uv"
 args = ["run", "--locked", "--no-sync", "readndraft-imap-mcp", "mcp"]
-cwd = ".."
+cwd = "."
 startup_timeout_sec = 10
 tool_timeout_sec = 60
 required = false

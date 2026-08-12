@@ -39,6 +39,16 @@ def test_generated_draft_preserves_client_editable_fields_and_attachment(tmp_pat
     assert len(draft.attachments[0].sha256) == 64
 
 
+def test_generated_draft_allows_no_recipients() -> None:
+    draft = prepare_draft(to=(), subject="Unaddressed", body="editable body")
+    raw, _ = build_draft_message("owner@example.com", draft)
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+
+    assert str(message["To"]) == ""
+    assert message["Cc"] is None
+    assert message["Bcc"] is None
+
+
 def test_draft_headers_reject_injection() -> None:
     with pytest.raises(ValueError, match="subject"):
         prepare_draft(

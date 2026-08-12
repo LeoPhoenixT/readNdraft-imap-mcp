@@ -26,7 +26,7 @@ def test_repo_local_codex_config_launches_checkout_with_uv() -> None:
         "readndraft-imap-mcp",
         "mcp",
     ]
-    assert server["cwd"] == ".."
+    assert server["cwd"] == "."
     assert server["required"] is False
     assert server["default_tools_approval_mode"] == "approve"
     assert "env" not in server

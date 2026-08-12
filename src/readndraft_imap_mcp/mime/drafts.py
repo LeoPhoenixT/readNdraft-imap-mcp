@@ -50,8 +50,6 @@ def prepare_draft(
     attachments: tuple[DraftAttachment, ...] = (),
 ) -> PreparedDraft:
     recipients = len(to) + len(cc) + len(bcc)
-    if not to:
-        raise ValueError("at least one To recipient is required")
     if recipients > MAX_RECIPIENTS:
         raise ValueError("draft exceeds the 100 recipient limit")
     if "\r" in subject or "\n" in subject or len(subject) > MAX_SUBJECT_CHARS:
