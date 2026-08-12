@@ -7,5 +7,6 @@ dist/
 build/
 *.egg-info/
 phase0-report*.json
+.agents/skills/readndraft-release/
 
 
