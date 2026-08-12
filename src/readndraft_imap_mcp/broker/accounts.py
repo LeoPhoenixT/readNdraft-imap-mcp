@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from email.utils import getaddresses
+from email.errors import HeaderParseError
+from email.headerregistry import Address
 from types import MappingProxyType
 from typing import Iterable, Literal, Mapping
 
@@ -30,14 +31,14 @@ class AccountConfig:
         if not self.username.strip():
             raise ValueError("username must be non-empty")
         if self.sender_address is not None:
-            if any(char in self.sender_address for char in "\r\n"):
+            try:
+                parsed_sender = Address(addr_spec=self.sender_address)
+            except (HeaderParseError, ValueError):
                 raise ValueError("invalid sender_address")
-            parsed = getaddresses((self.sender_address,))
             if (
-                len(parsed) != 1
-                or parsed[0][0]
-                or parsed[0][1] != self.sender_address
-                or "@" not in parsed[0][1]
+                parsed_sender.addr_spec != self.sender_address
+                or not parsed_sender.username
+                or not parsed_sender.domain
             ):
                 raise ValueError("invalid sender_address")
 

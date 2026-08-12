@@ -58,6 +58,12 @@ def test_account_sender_address_is_optional_validated_metadata() -> None:
         "Leo <leo@example.com>",
         "a@example.com, b@example.com",
         "a@example.com\nBcc: x@example.com",
+        "@example.com",
+        "a b@example.com",
+        "a@example..com",
+        "a@example.com (comment)",
+        " a@example.com",
+        "a@example.com ",
     ):
         with pytest.raises(ValueError, match="sender_address"):
             AccountConfig(
