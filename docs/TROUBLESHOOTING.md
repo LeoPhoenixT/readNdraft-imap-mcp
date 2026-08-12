@@ -60,6 +60,12 @@ If status is `outdated`, run `skill install CLIENT`. If it is `modified` or
 `unmanaged`, inspect the directory first; use `--force` only when you intend to
 replace it completely. A forced replacement removes orphan reference files.
 
+For a complete recognized user-level MCP and skill refresh, run `update check
+--client CLIENT` first, then `update apply --client CLIENT`. An `unrecognized`
+MCP result is intentionally not overwritten. A modified or unmanaged skill
+requires separate review before `--force-skill`; private configuration backups
+are stored under readNdraft's state directory.
+
 ## Old behavior remains after an upgrade
 
 Current broker endpoints include the IPC protocol version. Reconnect the MCP so

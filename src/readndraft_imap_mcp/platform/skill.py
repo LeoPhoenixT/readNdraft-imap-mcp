@@ -4,30 +4,44 @@ import argparse
 import hashlib
 import json
 import os
+import secrets
 import shutil
 from pathlib import Path
 
 from .paths import AppPaths, current_app_paths
 
-SKILL_NAME = "readndraft-email"
+DEFAULT_SKILL_NAME = "readndraft-email"
+SKILL_NAMES = (DEFAULT_SKILL_NAME, "readndraft-update")
 
 
-def bundled_skill_dir() -> Path:
-    packaged = Path(__file__).resolve().parents[1] / "_skills" / SKILL_NAME
+def _validate_skill_name(skill_name: str) -> str:
+    if skill_name not in SKILL_NAMES:
+        raise ValueError(f"skill must be one of: {', '.join(SKILL_NAMES)}")
+    return skill_name
+
+
+def bundled_skill_dir(skill_name: str = DEFAULT_SKILL_NAME) -> Path:
+    skill_name = _validate_skill_name(skill_name)
+    packaged = Path(__file__).resolve().parents[1] / "_skills" / skill_name
     if packaged.is_dir():
         return packaged
-    repository = Path(__file__).resolve().parents[3] / "skills" / SKILL_NAME
+    repository = Path(__file__).resolve().parents[3] / "skills" / skill_name
     if repository.is_dir():
         return repository
     raise RuntimeError("packaged readNdraft skill is unavailable")
 
 
-def skill_destination(client: str, home: Path | None = None) -> Path:
+def skill_destination(
+    client: str,
+    home: Path | None = None,
+    skill_name: str = DEFAULT_SKILL_NAME,
+) -> Path:
+    skill_name = _validate_skill_name(skill_name)
     root = (home or Path.home()).resolve()
     if client == "codex":
-        return root / ".agents" / "skills" / SKILL_NAME
+        return root / ".agents" / "skills" / skill_name
     if client == "claude-code":
-        return root / ".claude" / "skills" / SKILL_NAME
+        return root / ".claude" / "skills" / skill_name
     raise ValueError("skill client must be codex or claude-code")
 
 
@@ -40,8 +54,29 @@ def _digest(root: Path) -> str:
     return digest.hexdigest()
 
 
+def _remove_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
 def _manifest_path(paths: AppPaths) -> Path:
     return paths.state_dir / "skill-installs.json"
+
+
+def _manifest_key(client: str, skill_name: str) -> str:
+    return f"{client}:{skill_name}"
+
+
+def _manifest_record(
+    manifest: dict[str, dict[str, str]], client: str, skill_name: str
+) -> dict[str, str] | None:
+    record = manifest.get(_manifest_key(client, skill_name))
+    if record is None and skill_name == DEFAULT_SKILL_NAME:
+        # Read manifests written by releases that managed only readndraft-email.
+        record = manifest.get(client)
+    return record
 
 
 def _load_manifest(paths: AppPaths) -> dict[str, dict[str, str]]:
@@ -70,26 +105,64 @@ def install_skill(
     paths: AppPaths,
     home: Path | None = None,
     force: bool = False,
+    skill_name: str = DEFAULT_SKILL_NAME,
 ) -> Path:
-    source = bundled_skill_dir()
-    target = skill_destination(client, home)
+    skill_name = _validate_skill_name(skill_name)
+    source = bundled_skill_dir(skill_name)
+    target = skill_destination(client, home, skill_name)
     manifest = _load_manifest(paths)
-    current = manifest.get(client)
+    current = _manifest_record(manifest, client, skill_name)
+    key = _manifest_key(client, skill_name)
     if target.exists():
         actual = _digest(target)
         if actual == _digest(source):
-            manifest[client] = {"path": str(target), "hash": actual}
+            manifest[key] = {"path": str(target), "hash": actual}
+            if skill_name == DEFAULT_SKILL_NAME:
+                manifest.pop(client, None)
             _save_manifest(paths, manifest)
             return target
         managed = current and current.get("path") == str(target) and current.get("hash") == actual
         if not force and not managed:
             raise FileExistsError("existing skill is unrecognized or modified; refusing to overwrite")
-        shutil.rmtree(target)
+        token = secrets.token_hex(8)
+        backup = target.with_name(f".{target.name}.{token}.previous")
+        os.replace(target, backup)
+    else:
+        backup = None
     target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(source, target)
-    manifest[client] = {"path": str(target), "hash": _digest(target)}
-    _save_manifest(paths, manifest)
+    token = secrets.token_hex(8)
+    temporary = target.with_name(f".{target.name}.{token}.installing")
+    try:
+        shutil.copytree(source, temporary)
+        os.replace(temporary, target)
+        manifest[key] = {"path": str(target), "hash": _digest(target)}
+        if skill_name == DEFAULT_SKILL_NAME:
+            manifest.pop(client, None)
+        _save_manifest(paths, manifest)
+    except Exception:
+        _remove_path(temporary)
+        _remove_path(target)
+        if backup is not None and backup.exists():
+            os.replace(backup, target)
+        raise
+    if backup is not None:
+        _remove_path(backup)
     return target
+
+
+def install_all_skills(
+    client: str,
+    *,
+    paths: AppPaths,
+    home: Path | None = None,
+    force: bool = False,
+) -> tuple[Path, ...]:
+    return tuple(
+        install_skill(
+            client, paths=paths, home=home, force=force, skill_name=skill_name
+        )
+        for skill_name in SKILL_NAMES
+    )
 
 
 def skill_status(
@@ -97,17 +170,21 @@ def skill_status(
     *,
     paths: AppPaths,
     home: Path | None = None,
+    skill_name: str = DEFAULT_SKILL_NAME,
 ) -> tuple[str, Path]:
     """Report whether an installed skill is current, outdated, or unmanaged."""
 
-    source = bundled_skill_dir()
-    target = skill_destination(client, home)
-    if not target.is_dir():
+    skill_name = _validate_skill_name(skill_name)
+    source = bundled_skill_dir(skill_name)
+    target = skill_destination(client, home, skill_name)
+    if not target.exists():
         return "not installed", target
+    if not target.is_dir():
+        return "unmanaged", target
     actual = _digest(target)
     if actual == _digest(source):
         return "current", target
-    current = _load_manifest(paths).get(client)
+    current = _manifest_record(_load_manifest(paths), client, skill_name)
     if current and current.get("path") == str(target):
         if current.get("hash") == actual:
             return "outdated", target
@@ -115,16 +192,25 @@ def skill_status(
     return "unmanaged", target
 
 
-def uninstall_skill(client: str, *, paths: AppPaths, home: Path | None = None) -> None:
-    target = skill_destination(client, home)
+def uninstall_skill(
+    client: str,
+    *,
+    paths: AppPaths,
+    home: Path | None = None,
+    skill_name: str = DEFAULT_SKILL_NAME,
+) -> None:
+    skill_name = _validate_skill_name(skill_name)
+    target = skill_destination(client, home, skill_name)
     manifest = _load_manifest(paths)
-    current = manifest.get(client)
+    current = _manifest_record(manifest, client, skill_name)
     if not current or current.get("path") != str(target) or not target.is_dir():
         raise FileNotFoundError("no managed readNdraft skill installation found")
     if _digest(target) != current.get("hash"):
         raise RuntimeError("installed skill was modified; refusing to remove it")
     shutil.rmtree(target)
-    del manifest[client]
+    manifest.pop(_manifest_key(client, skill_name), None)
+    if skill_name == DEFAULT_SKILL_NAME:
+        manifest.pop(client, None)
     _save_manifest(paths, manifest)
 
 
@@ -133,24 +219,49 @@ def main(argv: list[str] | None = None) -> int:
     commands = parser.add_subparsers(dest="action", required=True)
     for name in ("install", "uninstall", "status"):
         item = commands.add_parser(name)
-        item.add_argument("client", choices=("codex", "claude-code"))
+        item.add_argument("values", nargs="+")
+        item.add_argument("--all", action="store_true")
         if name == "install":
             item.add_argument("--force", action="store_true")
-    commands.add_parser("print")
+    print_parser = commands.add_parser("print")
+    print_parser.add_argument("skill_name", nargs="?", default=DEFAULT_SKILL_NAME)
     args = parser.parse_args(argv)
     paths = current_app_paths()
     try:
         if args.action == "print":
-            print((bundled_skill_dir() / "SKILL.md").read_text(encoding="utf-8"), end="")
-        elif args.action == "install":
-            target = install_skill(args.client, paths=paths, force=args.force)
-            print(f"Installed {SKILL_NAME} at {target}")
-        elif args.action == "uninstall":
-            uninstall_skill(args.client, paths=paths)
-            print(f"Uninstalled {SKILL_NAME} for {args.client}")
+            print((bundled_skill_dir(args.skill_name) / "SKILL.md").read_text(encoding="utf-8"), end="")
         else:
-            state, target = skill_status(args.client, paths=paths)
-            print(f"{args.client}: {state} ({target})")
+            if args.all:
+                if len(args.values) != 1:
+                    raise ValueError("--all requires exactly one client")
+                client, skill_names = args.values[0], SKILL_NAMES
+            elif len(args.values) == 1:
+                client, skill_names = args.values[0], (DEFAULT_SKILL_NAME,)
+            elif len(args.values) == 2:
+                skill_names, client = (args.values[0],), args.values[1]
+            else:
+                raise ValueError("expected CLIENT or SKILL CLIENT")
+            if client not in {"codex", "claude-code"}:
+                raise ValueError("skill client must be codex or claude-code")
+            for skill_name in skill_names:
+                if args.action == "install":
+                    target = install_skill(
+                        client,
+                        paths=paths,
+                        force=args.force,
+                        skill_name=skill_name,
+                    )
+                    print(f"Installed {skill_name} at {target}")
+                elif args.action == "uninstall":
+                    uninstall_skill(
+                        client, paths=paths, skill_name=skill_name
+                    )
+                    print(f"Uninstalled {skill_name} for {client}")
+                else:
+                    state, target = skill_status(
+                        client, paths=paths, skill_name=skill_name
+                    )
+                    print(f"{client} {skill_name}: {state} ({target})")
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"Skill operation failed: {exc}")
         return 1

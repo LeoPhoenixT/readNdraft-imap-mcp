@@ -14,7 +14,7 @@ from readndraft_imap_mcp.poc.credentials import require_approved_backend
 
 from .client_config import client_config
 from .paths import AppPaths, current_app_paths
-from .skill import install_skill
+from .skill import install_all_skills
 
 
 def _print_client_setup(
@@ -37,8 +37,11 @@ def _print_client_setup(
     print("----- COPY END -----\n")
 
     if skill_target is not None:
-        print("Agent Skill")
-        print(f"Installed at: {skill_target}\n")
+        targets = skill_target if isinstance(skill_target, tuple) else (skill_target,)
+        print("Agent Skills" if len(targets) > 1 else "Agent Skill")
+        for target in targets:
+            print(f"Installed at: {target}")
+        print()
 
     print("Next steps")
     print("1. Add the copied configuration to the client.")
@@ -114,7 +117,9 @@ def main(argv: list[str] | None = None) -> int:
                 ).casefold() in {"y", "yes"}
             skill_target = None
             if install_requested and client in {"codex", "claude-code"}:
-                skill_target = install_skill(client, paths=current_app_paths())
+                skill_target = install_all_skills(
+                    client, paths=current_app_paths()
+                )
             _print_client_setup(client, config, skill_target=skill_target)
         else:
             print("\nNext step")

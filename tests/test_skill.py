@@ -8,6 +8,7 @@ from test_mcp_server import FakeBroker
 
 
 SKILL = Path("skills/readndraft-email")
+UPDATE_SKILL = Path("skills/readndraft-update")
 
 
 def test_skill_manifest_and_resources_are_valid() -> None:
@@ -91,4 +92,30 @@ def test_skill_explains_cross_platform_attachment_location_and_sender() -> None:
         "sender_address",
         "pinned account metadata",
     ):
-        assert statement in text
+        assert statement in text.casefold()
+
+
+def test_update_skill_is_concise_and_preserves_update_authorization() -> None:
+    text = (UPDATE_SKILL / "SKILL.md").read_text(encoding="utf-8")
+    _, frontmatter, body = text.split("---", 2)
+    lines = [line for line in frontmatter.strip().splitlines() if line]
+    assert lines[0] == "name: readndraft-update"
+    assert lines[1].startswith("description: ")
+    assert len(lines) == 2
+    assert len(body.splitlines()) < 80
+    for statement in (
+        "update check",
+        "read-only",
+        "direct conversational confirmation",
+        "--force-skill",
+        "separate explicit confirmation",
+        "never edit or replace it manually",
+        "fully restart",
+            "never restart a client",
+        ):
+        assert statement in text.casefold()
+    metadata = (UPDATE_SKILL / "agents" / "openai.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "$readndraft-update" in metadata
+    assert "TODO" not in text + metadata

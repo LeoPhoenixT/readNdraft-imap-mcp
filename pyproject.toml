@@ -55,11 +55,13 @@ packages = ["src/readndraft_imap_mcp"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "skills/readndraft-email" = "readndraft_imap_mcp/_skills/readndraft-email"
+"skills/readndraft-update" = "readndraft_imap_mcp/_skills/readndraft-update"
 
 [tool.hatch.build.targets.sdist]
 include = [
   "src/readndraft_imap_mcp",
   "skills/readndraft-email",
+  "skills/readndraft-update",
   "README.md",
   "LICENSE",
   "THIRD_PARTY_NOTICES.md",
