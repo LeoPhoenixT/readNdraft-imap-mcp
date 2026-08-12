@@ -29,6 +29,7 @@ def test_release_workflow_separates_build_and_oidc_publish() -> None:
     assert "needs: [publish]" in text
     assert "contents: write" in text
     assert "gh release create" in text
+    assert "GH_REPO: ${{ github.repository }}" in text
     assert "--generate-notes" in text
     assert "persist-credentials: false" in text
 
