@@ -32,6 +32,8 @@ readNdraft is capability-minimized rather than a general email client.
   a per-draft override.
 - Plain-text and summary reads use PEEK semantics and do not set Seen.
 - Draft operations append/replace only in the server-designated Drafts mailbox.
+  Replacement expunges the previous MCP-created draft version; no tool can
+  delete an arbitrary draft or ordinary message.
 - No component imports or configures SMTP or exposes mail submission.
 
 Email bodies, HTML, filenames, headers, and attachment content are untrusted

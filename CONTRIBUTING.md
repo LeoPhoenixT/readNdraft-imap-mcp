@@ -55,6 +55,21 @@ account metadata and requires existing Codex CLI authentication. Local account
 and credential state remains in the normal private readNdraft application
 directories.
 
+#### Testing broker-side source changes
+
+A fresh MCP frontend reuses a healthy resident broker at the same IPC protocol
+endpoint. Therefore, changes under `broker/`, `imap/`, `mime/`, `drafts/`, or
+shared broker dependencies can still exhibit old behavior even though
+`readndraft_dev` points at the current checkout. The tool-catalog smoke test
+proves frontend initialization, not that broker implementation code restarted.
+
+For those changes, follow the guarded broker-refresh procedure in
+`.agents/skills/readndraft-local-mcp-test/SKILL.md`, then start a fresh Codex CLI
+session and exercise the focused behavior that changed. Identify and stop only
+the verified readNdraft development broker; never terminate unrelated Python or
+Codex processes. Real account or draft tests require an explicit request and
+must remain separate from the default metadata-free smoke test.
+
 Tests must not use real credentials, mail, account metadata, or private state.
 Keep changes narrowly scoped and update tests and public documentation when
 behavior changes.

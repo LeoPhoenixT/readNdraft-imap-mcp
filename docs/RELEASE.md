@@ -1,23 +1,41 @@
 # Release procedure
 
-Publishing is intentionally separate from normal CI.
+Publishing is intentionally separate from normal CI. A version tag triggers the
+production release workflow; never create or push one until the release PR is
+merged and its required checks have succeeded.
 
-1. Confirm the PyPI project name and that Apache-2.0 metadata and license files
-   are present in both built distributions.
-2. Configure PyPI Trusted Publishing for this repository and release workflow.
-3. Update and review the project version.
-4. Run the full suite on Windows and Ubuntu.
-5. Run the security policy, dependency audit, and license-policy check on both
-   Windows and Ubuntu.
-6. Build with `uv build --no-sources`.
-7. Inspect wheel and source-distribution contents, including the Agent Skill.
-8. Install the wheel in a clean environment and run the unified CLI smoke tests.
-9. Publish to TestPyPI and complete clean-machine uvx tests.
-10. Complete real Windows, Linux, target-client, and HKTV IMAP acceptance.
-11. Create a protected version tag to publish to PyPI through trusted identity.
-    After publishing succeeds, the workflow creates the matching GitHub Release
-    with generated release notes.
+## Prepare and merge the release PR
 
-Never place a PyPI token in the repository. Production publication remains
-blocked until Trusted Publisher setup and real-machine acceptance are completed
-by a human.
+1. Start from current `main` on `codex/release-X.Y.Z`.
+2. Update the version in `pyproject.toml`, `uv.lock`,
+   `src/readndraft_imap_mcp/__init__.py`, and `tests/test_release.py`.
+3. Update user-facing setup, migration, security, and skill documentation for
+   behavior changed by the release.
+4. Run locally:
+
+   ```console
+   uv run --locked python scripts/release_check.py --tag vX.Y.Z
+   uv run --locked pytest
+   ```
+
+5. Review the complete diff, push the branch, and open the release PR.
+6. Merge only when the PR is ready, all six required `Test and security` checks
+   have succeeded, review threads are resolved, and the merge state is clean.
+
+## Publish from the protected tag
+
+1. Fast-forward local `main` to the merged release commit and verify the version.
+2. Confirm `vX.Y.Z` does not already exist locally or remotely.
+3. Create one annotated `vX.Y.Z` tag on that exact commit and push it. Never
+   move, delete, or recreate a released version tag.
+4. Monitor `Publish release to PyPI`. The workflow reruns the Windows and Ubuntu
+   test/security matrix, builds wheel and source distributions, verifies their
+   metadata and contents, smoke-tests both artifacts, generates PEP 740
+   attestations, and publishes to production PyPI through Trusted Publishing.
+5. After publication, verify that the workflow created the matching public
+   GitHub Release with generated notes and attached distributions.
+
+TestPyPI, additional clean-machine checks, and real provider/client acceptance
+are optional pre-release validation for changes that need them; they are not
+automated tag gates. Record any such validation in the release PR. Never place a
+PyPI token in the repository; the production workflow uses trusted identity.

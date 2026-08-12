@@ -58,7 +58,10 @@ Never retry an ambiguous connection or `broker_error` automatically.
 
 Resolve the account with `list_accounts`, then present its exact `sender_address`,
 account, recipients, subject, body, and attachment names and obtain direct user
-confirmation. The sender is pinned account metadata, not a draft argument. Call
-`create_draft` once with the unchanged
-payload and retain the returned `draft_id`. Before `update_draft`, present the
-full replacement and confirm again. Neither operation sends mail.
+confirmation. To, Cc, and Bcc may all be empty; explicitly present that there
+are no recipients rather than inventing one or refusing the draft. The sender is
+pinned account metadata, not a draft argument. Call `create_draft` once with the
+unchanged payload and retain the returned `draft_id`. Before `update_draft`,
+present the full replacement and confirm again. Updating replaces and expunges
+the prior tracked draft version. Neither operation sends mail or deletes an
+ordinary message.

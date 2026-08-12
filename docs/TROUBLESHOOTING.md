@@ -68,6 +68,13 @@ cannot be reused and exits after its leases and idle timeout. If a response stil
 mentions `readndraft-approve`, verify the client command points to the updated
 package and run `skill status CLIENT`; the current protocol has no approval ID.
 
+For repository development, a source edit does not change the IPC protocol
+endpoint. A new `readndraft_dev` frontend can therefore reuse a healthy broker
+that was started from older source. Follow the guarded refresh instructions in
+`.agents/skills/readndraft-local-mcp-test/SKILL.md`, restart only the verified
+development broker, and test the changed behavior itself. The tool-catalog smoke
+test alone cannot prove broker-side code was refreshed.
+
 ## An old approvals directory remains after updating
 
 Phase 17 retired command-line approvals. Existing files are intentionally left
