@@ -536,7 +536,7 @@ class BrokerService:
             body=body,
             attachments=prepared_attachments,
         )
-        raw, message_id = build_draft_message(account.username, draft)
+        raw, message_id = build_draft_message(account.effective_sender_address, draft)
         started = perf_counter()
         try:
             result = await self._client_call(
@@ -631,7 +631,7 @@ class BrokerService:
             attachments=prepared_attachments,
         )
         raw, message_id = build_draft_message(
-            account.username,
+            account.effective_sender_address,
             draft,
             message_id=record.message_id,
         )

@@ -27,6 +27,34 @@ uv run --locked python scripts/license_check.py
 uv build --no-sources
 ```
 
+### Codex development MCP
+
+This repository includes a project-scoped Codex MCP entry named
+`readndraft_dev`. It runs the current checkout through the locked uv environment
+and does not replace a separately installed, release-pinned `readndraft` entry.
+The entry is non-blocking during ordinary sessions so a checkout that has not
+run `uv sync` does not prevent Codex from starting.
+After trusting the repository, start a new Codex session and verify the entry:
+
+```console
+codex -C . mcp get readndraft_dev --json
+```
+
+Run an end-to-end smoke test through a fresh, ephemeral, read-only Codex CLI
+session:
+
+```console
+uv run --locked python scripts/codex_dev_mcp_smoke.py
+```
+
+The smoke test initializes the MCP locally and verifies its tool catalog without
+calling a mail or account-data tool. It then starts an isolated Codex session;
+the script temporarily makes the project entry required, so Codex cannot
+complete unless the development MCP initializes. The session does not receive
+account metadata and requires existing Codex CLI authentication. Local account
+and credential state remains in the normal private readNdraft application
+directories.
+
 Tests must not use real credentials, mail, account metadata, or private state.
 Keep changes narrowly scoped and update tests and public documentation when
 behavior changes.

@@ -19,6 +19,21 @@ Check the provider's IMAP hostname, implicit-TLS port, username, IMAP access
 setting, and app-password requirements. Rotate the stored secret locally; never
 paste it into chat or add it to an environment variable.
 
+## A draft shows the IMAP login as its sender
+
+Configure the account's visible address with `account set-sender ALIAS ADDRESS`.
+Use `account list` to verify the effective sender. Authentication continues to
+use the original IMAP username; `account clear-sender ALIAS` restores that
+username as the draft sender fallback.
+
+## A client cannot open a downloaded attachment
+
+`save_attachment` returns an absolute `saved_path` in the MCP server host's
+native format. Use it verbatim rather than translating separators or rebuilding
+the attachment directory. A remote or sandboxed MCP client may not have access
+to that host path; in that case use `attachments path` locally and do not assume
+the client has read the saved file.
+
 ## MCP startup times out
 
 Run `doctor`, then `account test ALIAS`. Confirm the generated client command

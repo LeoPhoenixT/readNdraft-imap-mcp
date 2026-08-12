@@ -25,6 +25,11 @@ readNdraft is capability-minimized rather than a general email client.
   draft provenance, safe MIME handling, and integrity-chained audit records.
 - The broker reads local draft attachments only from its fixed private input
   directory and saves downloaded attachments only to its fixed output directory.
+  The save result reveals the resulting absolute host path but cannot select or
+  write an arbitrary path.
+- A human administrator pins each account's optional visible sender address. MCP
+  may read the effective address for confirmation but cannot change it or supply
+  a per-draft override.
 - Plain-text and summary reads use PEEK semantics and do not set Seen.
 - Draft operations append/replace only in the server-designated Drafts mailbox.
 - No component imports or configures SMTP or exposes mail submission.

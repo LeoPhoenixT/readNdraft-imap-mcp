@@ -35,10 +35,40 @@ def test_account_registry_returns_only_safe_pinned_metadata() -> None:
             "host": "mail.example.com",
             "port": 993,
             "enabled": True,
+            "sender_address": "leo@example.com",
         }
     ]
     assert "secret" not in repr(registry.list_safe()).casefold()
     assert registry.require_enabled("personal") is account
+
+
+def test_account_sender_address_is_optional_validated_metadata() -> None:
+    account = AccountConfig(
+        "work",
+        "imap.example.com",
+        993,
+        "login@internal.example",
+        sender_address="leo@example.com",
+    )
+    assert account.effective_sender_address == "leo@example.com"
+    assert account.safe_metadata()["sender_address"] == "leo@example.com"
+
+    for invalid in (
+        "",
+        "Leo <leo@example.com>",
+        "a@example.com, b@example.com",
+        "a@example.com\nBcc: x@example.com",
+        "@example.com",
+        "a b@example.com",
+        "a@example..com",
+        "a@example.com (comment)",
+        " a@example.com",
+        "a@example.com ",
+    ):
+        with pytest.raises(ValueError, match="sender_address"):
+            AccountConfig(
+                "work", "imap.example.com", 993, "login", sender_address=invalid
+            )
 
 
 def test_disabled_and_unknown_accounts_fail_closed() -> None:
@@ -55,4 +85,3 @@ def test_disabled_and_unknown_accounts_fail_closed() -> None:
 def test_account_id_is_restricted(account_id: str) -> None:
     with pytest.raises(ValueError, match="account_id"):
         AccountConfig(account_id, "mail.example.com", 993, "x@example.com")
-

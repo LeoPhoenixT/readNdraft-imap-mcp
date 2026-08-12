@@ -38,6 +38,7 @@ class FakeBroker:
                 "host": "imap.example.com",
                 "port": 993,
                 "enabled": True,
+                "sender_address": "leo@example.com",
             }
         ]
 
@@ -93,7 +94,9 @@ class FakeBroker:
 
     async def save_attachment(self, identity, attachment_id):
         assert (identity, attachment_id) == (IDENTITY, "part-2")
-        return SavedAttachment("safe.txt", "safe.txt", "text/plain", 3, "a" * 64)
+        return SavedAttachment(
+            "safe.txt", "safe.txt", "text/plain", 3, "a" * 64, "/data/safe.txt"
+        )
 
     async def create_draft(self, account_id, **kwargs):
         assert account_id == "personal"
@@ -162,7 +165,9 @@ async def exercise_server() -> None:
         tools = {tool.name: tool for tool in listed.tools}
         assert tools["list_accounts"].outputSchema["type"] == "object"
         account_schema = repr(tools["list_accounts"].outputSchema)
-        for field in ("id", "username", "host", "port", "enabled"):
+        for field in (
+            "id", "username", "host", "port", "enabled", "sender_address"
+        ):
             assert field in account_schema
         search_schema = repr(tools["search_emails"].outputSchema)
         for field in ("account_id", "mailbox", "uid_validity", "uid", "size"):
@@ -185,6 +190,7 @@ async def exercise_server() -> None:
                     "host": "imap.example.com",
                     "port": 993,
                     "enabled": True,
+                    "sender_address": "leo@example.com",
                 }
             ]
         }
@@ -265,6 +271,7 @@ async def exercise_server() -> None:
         )
         assert attachment.structuredContent["saved_name"] == "safe.txt"
         assert attachment.structuredContent["sha256"] == "a" * 64
+        assert attachment.structuredContent["saved_path"] == "/data/safe.txt"
 
         draft = await session.call_tool(
             "create_draft",

@@ -39,6 +39,17 @@ def test_account_file_enable_disable_and_delete(tmp_path) -> None:
     assert accounts.load() == ()
 
 
+def test_account_file_sender_is_optional_and_can_be_changed(tmp_path) -> None:
+    accounts = AccountFile((tmp_path / "accounts.json").resolve())
+    accounts.upsert(AccountConfig("work", "imap.example.com", 993, "login@internal"))
+    assert accounts.load()[0].sender_address is None
+
+    accounts.set_sender_address("work", "leo@example.com")
+    assert accounts.load()[0].effective_sender_address == "leo@example.com"
+    accounts.set_sender_address("work", None)
+    assert accounts.load()[0].effective_sender_address == "login@internal"
+
+
 def test_account_file_rejects_unknown_fields(tmp_path) -> None:
     path = (tmp_path / "accounts.json").resolve()
     path.write_text(
