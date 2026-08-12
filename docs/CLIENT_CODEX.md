@@ -22,6 +22,11 @@ Install the personal skill for Codex-compatible local skill discovery:
 uvx readndraft-imap-mcp skill install codex
 ```
 
+This installs the skill for Codex only. The package has no managed ChatGPT
+desktop skill target; ChatGPT desktop setup and `configure chatgpt-desktop`
+provide MCP configuration only. Do not use `--install-skill` when running setup
+for ChatGPT desktop.
+
 The broker remains responsible for capability boundaries. The skill requires
 direct conversational confirmation before writes. Generated Codex
 configurations disable native tool-approval popups; the skill confirmation is a

@@ -1,10 +1,13 @@
 # readNdraft IMAP MCP — Cross-Platform Plan
 
-> **Current policy:** Phase 17 supersedes every earlier local-approval design in
+> **How to read this document:** This is an architecture record containing both
+> current requirements and retained historical designs. Phase 17 supersedes
+> every earlier local-approval design in
 > this document. Reads execute within broker limits. Star/read changes and draft
 > writes require direct conversational confirmation governed by the Agent Skill
 > and client permissions, not a terminal command or `approval_id`. Historical
-> approval sections are retained only as implementation history.
+> approval sections are retained only as implementation history and are not
+> requirements. `docs/SECURITY.md` is the concise current security boundary.
 
 ## 1. Objective
 
@@ -983,9 +986,11 @@ This is especially important for:
 
 ---
 
-## 19. Draft creation
+## 19. Draft creation (current flow; approval transaction retired)
 
-Draft creation requires local user approval.
+Draft creation requires direct conversational confirmation through the Agent
+Skill or equivalent client behavior. The broker does not issue or verify an
+approval token.
 
 Expected flow:
 
@@ -996,13 +1001,7 @@ AI builds draft request
 MCP validates shape
         |
         v
-Broker canonicalizes request
-        |
-        v
-Approval transaction created
-        |
-        v
-User approves exact contents
+Agent presents exact contents and obtains direct confirmation
         |
         v
 Generate MIME message
@@ -1014,7 +1013,7 @@ APPEND to discovered server drafts mailbox
 Record provenance and resulting UID identity
 ```
 
-Approval must show:
+Confirmation must show:
 
 - Account.
 - From identity where applicable.
@@ -1801,7 +1800,10 @@ V1 is not complete until all applicable criteria pass on Windows and Linux:
 
 ## 36. Documentation structure
 
-`PLAN.md` is the canonical architecture and requirements document.
+`PLAN.md` is the architecture record. Its opening current-policy note and later
+phase amendments define which retained designs are current. Superseded sections
+remain only to explain design history; `docs/SECURITY.md` is the concise current
+security boundary.
 
 If detailed platform notes become necessary, add:
 

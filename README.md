@@ -1,8 +1,8 @@
 # readNdraft IMAP MCP
 
 Safely search, read, flag, and draft email through IMAP. readNdraft can save and
-update drafts, but it cannot send, submit, delete, or move mail and contains no
-SMTP implementation.
+replace MCP-created drafts, but it cannot send, submit, delete ordinary mail, or
+move mail and contains no SMTP implementation.
 
 ## Installation
 
@@ -34,8 +34,9 @@ For Codex, run this command in a real interactive terminal:
 uvx readndraft-imap-mcp@latest setup --client codex --install-skill
 ```
 
-Use `chatgpt-desktop` or `claude-code` instead of `codex` when configuring one
-of those clients.
+Use `claude-code` instead of `codex` when configuring Claude Code. For ChatGPT
+desktop, omit `--install-skill` and use `--client chatgpt-desktop`; setup prints
+its MCP configuration but does not install an Agent Skill for that client.
 
 | Client | Setup value | Detailed guide |
 | --- | --- | --- |
@@ -54,7 +55,9 @@ The wizard will:
 3. Read the password or app password through a hidden terminal prompt.
 4. Test the IMAP connection before saving the account.
 5. Print a secret-free, version-pinned MCP configuration.
-6. Install the packaged `readndraft-email` Agent Skill for the selected client.
+6. Install the packaged `readndraft-email` Agent Skill when the selected client
+   is Codex or Claude Code and skill installation was requested. ChatGPT desktop
+   setup configures only the MCP.
 
 Never put an IMAP password in a command argument, environment variable, MCP
 configuration, issue, chat, or test report.
@@ -130,11 +133,14 @@ while uv downloads the pinned package. If a stored password has changed, run
 - Star/unstar and mark read/unread without replacing unrelated flags.
 - Batch one star or read state across up to 50 selected messages and 3 accounts;
   batches return ordered per-item results.
-- Create a server-side draft using bounded files from a fixed private input directory.
+- Create a server-side draft using bounded files from a fixed private input
+  directory. To, Cc, and Bcc may all be empty when the user wants an
+  unaddressed draft.
 - Update only a draft previously created by this MCP, after confirmation.
 
-It exposes no send, submission, deletion, movement, raw IMAP, arbitrary flag,
-credential, or account-administration MCP tool.
+It exposes no send, submission, ordinary-message deletion, movement, raw IMAP,
+arbitrary flag, credential, or account-administration MCP tool. Updating a
+tracked draft replaces it and expunges the previous draft version.
 
 ## Manual setup and administration
 
@@ -199,6 +205,9 @@ uvx readndraft-imap-mcp skill print
 The installer refuses to overwrite or remove a user-modified skill. Codex loads
 personal skills from `~/.agents/skills`; Claude Code loads them from
 `~/.claude/skills`.
+
+ChatGPT desktop has no managed skill target in this package. Configure its MCP
+with `configure chatgpt-desktop`; do not pass `chatgpt-desktop` to `skill`.
 
 `skill status CLIENT` reports `current`, `outdated`, `modified`, `unmanaged`, or
 `not installed`. Use `skill install CLIENT --force` only when intentionally
@@ -271,7 +280,7 @@ On PowerShell, capture the generated JSON in a variable as shown in the
 
 ### 3. Refresh the Agent Skill
 
-Use `codex` for Codex or ChatGPT desktop and `claude-code` for Claude Code:
+Refresh only skills installed for Codex or Claude Code:
 
 ```console
 uvx readndraft-imap-mcp@latest skill install codex
@@ -380,8 +389,10 @@ locate them. `save_attachment` also returns the saved file's absolute path using
 the MCP server host's native path format; clients must use that value verbatim.
 
 Read [SECURITY.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/SECURITY.md)
-and the canonical [PLAN.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/PLAN.md) for the
-full threat model. Security issues should not contain credentials or private mail.
+for the current security boundary and
+[PLAN.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/PLAN.md) for
+the architecture record and its explicitly marked historical designs. Security
+issues should not contain credentials or private mail.
 
 ## Development
 
