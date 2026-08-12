@@ -389,10 +389,8 @@ locate them. `save_attachment` also returns the saved file's absolute path using
 the MCP server host's native path format; clients must use that value verbatim.
 
 Read [SECURITY.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/SECURITY.md)
-for the current security boundary and
-[PLAN.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/PLAN.md) for
-the architecture record and its explicitly marked historical designs. Security
-issues should not contain credentials or private mail.
+for the current security boundary. Security issues should not contain
+credentials or private mail.
 
 ## Development
 
