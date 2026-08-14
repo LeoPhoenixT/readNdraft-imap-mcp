@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 
@@ -71,6 +72,22 @@ def _completed(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(command, 0, "", "")
 
 
+def _legacy_invocation() -> tuple[str, list[str]]:
+    package = "readndraft-imap-mcp@0.3.0"
+    if sys.platform == "win32":
+        return r"C:\bin\uvw.exe", ["tool", "run", package, "mcp"]
+    return "/usr/bin/uvx", [package, "mcp"]
+
+
+def _codex_legacy_config() -> str:
+    command, args = _legacy_invocation()
+    return (
+        "[mcp_servers.readndraft]\n"
+        f"command = {json.dumps(command)}\n"
+        f"args = {json.dumps(args)}\n"
+    )
+
+
 def test_migration_refuses_unknown_mcp_without_mutation(tmp_path: Path) -> None:
     home = tmp_path / "home"
     config = home / ".codex" / "config.toml"
@@ -98,11 +115,7 @@ def test_migration_refuses_modified_managed_skill_before_mcp_removal(tmp_path: P
     (targets[0] / "SKILL.md").write_text("user modification\n", encoding="utf-8")
     config = home / ".codex" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
-        '[mcp_servers.readndraft]\ncommand = "C:\\\\bin\\\\uvw.exe"\n'
-        'args = ["tool", "run", "readndraft-imap-mcp@0.3.0", "mcp"]\n',
-        encoding="utf-8",
-    )
+    config.write_text(_codex_legacy_config(), encoding="utf-8")
     calls: list[list[str]] = []
 
     with pytest.raises(RuntimeError, match="modified or unmanaged"):
@@ -123,11 +136,7 @@ def test_migration_removes_only_recognized_mcp_and_clean_skills(tmp_path: Path) 
     targets = install_all_skills("codex", paths=paths, home=home)
     config = home / ".codex" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
-        '[mcp_servers.readndraft]\ncommand = "C:\\\\bin\\\\uvw.exe"\n'
-        'args = ["tool", "run", "readndraft-imap-mcp@0.3.0", "mcp"]\n',
-        encoding="utf-8",
-    )
+    config.write_text(_codex_legacy_config(), encoding="utf-8")
 
     def runner(command: list[str]) -> subprocess.CompletedProcess[str]:
         config.write_text("", encoding="utf-8")
@@ -149,19 +158,15 @@ def test_claude_migration_uses_native_user_scope_removal(tmp_path: Path) -> None
     paths = _paths(tmp_path)
     config = home / ".claude.json"
     config.parent.mkdir(parents=True)
+    command, args = _legacy_invocation()
     config.write_text(
         json.dumps(
             {
                 "mcpServers": {
                     "readndraft": {
                         "type": "stdio",
-                        "command": "C:\\bin\\uvw.exe",
-                        "args": [
-                            "tool",
-                            "run",
-                            "readndraft-imap-mcp@0.3.0",
-                            "mcp",
-                        ],
+                        "command": command,
+                        "args": args,
                     }
                 },
                 "projects": {},
