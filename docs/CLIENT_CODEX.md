@@ -1,46 +1,33 @@
 # Codex and ChatGPT desktop
 
-Generate a version-pinned configuration:
+## Codex plugin installation
+
+Configure the account first:
 
 ```console
-uvx readndraft-imap-mcp@latest configure codex
+uvx readndraft-imap-mcp@0.4.0 setup
 ```
 
-Add the printed `[mcp_servers.readndraft]` table to `~/.codex/config.toml`. It
-contains an absolute `uvx` command on Linux or consoleless `uvw` command on
-Windows, package/version arguments, a 30-second startup allowance for the first
-download, a 60-second tool timeout, required startup, and the no-popup `approve`
-tool mode. It contains no secret or account password.
-
-Run `codex mcp list`, then open a new session and confirm readNdraft is connected.
-On the ChatGPT desktop client, generate `chatgpt-desktop` output and add the same
-local stdio definition through its MCP settings.
-
-Install both personal skills for Codex-compatible local skill discovery:
+Then let Codex own the integration lifecycle:
 
 ```console
-uvx readndraft-imap-mcp skill install codex
-uvx readndraft-imap-mcp skill install readndraft-update codex
+codex plugin marketplace add LeoPhoenixT/readNdraft-imap-mcp
+codex plugin add readndraft@readndraft
 ```
 
-This installs the skill for Codex only. The package has no managed ChatGPT
-desktop skill target; ChatGPT desktop setup and `configure chatgpt-desktop`
-provide MCP configuration only. Do not use `--install-skill` when running setup
-for ChatGPT desktop.
+Start a new session, run `codex plugin list`, and ask readNdraft to list accounts
+and mailboxes. The plugin supplies the MCP definition and `readndraft-email`
+skill together, pinned to the same release. It contains no password and exposes
+no SMTP/send tool.
 
-To check or apply a later recognized user-level update, use:
+For an installation created by 0.3.x or earlier, remove only recognized legacy
+state before installing the plugin:
 
 ```console
-uvx readndraft-imap-mcp@latest update check --client codex
-uvx readndraft-imap-mcp@latest update apply --client codex
+uvx readndraft-imap-mcp@0.4.0 migrate-plugin --client codex
 ```
 
-The check is read-only. Apply backs up and replaces only the recognized
-`[mcp_servers.readndraft]` table, refreshes both managed skills, and requires a
-full Codex restart. It refuses unrecognized MCP entries and locally modified
-skills by default.
+The migration refuses unknown/custom MCP entries and modified skills.
 
-The broker remains responsible for capability boundaries. The skill requires
-direct conversational confirmation before writes. Generated Codex
-configurations disable native tool-approval popups; the skill confirmation is a
-behavioral safeguard rather than broker-verified authorization.
+ChatGPT desktop is not covered by the plugin marketplace. Generate its manual,
+secret-free MCP definition with `configure chatgpt-desktop`.

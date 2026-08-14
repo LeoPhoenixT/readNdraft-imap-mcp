@@ -1,0 +1,29 @@
+{
+  "name": "readndraft",
+  "version": "0.4.0",
+  "description": "Safely read, organize, and draft IMAP email without sending mail.",
+  "author": {
+    "name": "LeoPhoenixT",
+    "url": "https://github.com/LeoPhoenixT"
+  },
+  "homepage": "https://github.com/LeoPhoenixT/readNdraft-imap-mcp",
+  "repository": "https://github.com/LeoPhoenixT/readNdraft-imap-mcp",
+  "license": "Apache-2.0",
+  "keywords": ["email", "imap", "drafts", "mcp"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "readNdraft Email",
+    "shortDescription": "Read and draft IMAP email without sending.",
+    "longDescription": "A local, capability-minimized IMAP integration for searching and reading mail, managing ordinary mailbox state, and saving unsent drafts.",
+    "developerName": "LeoPhoenixT",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/LeoPhoenixT/readNdraft-imap-mcp",
+    "defaultPrompt": [
+      "Summarize my recent email.",
+      "Find messages matching my criteria.",
+      "Create an unsent email draft."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

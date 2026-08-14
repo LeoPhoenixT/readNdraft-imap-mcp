@@ -382,6 +382,10 @@ def _print_status(items: list[ClientUpdateStatus], as_json: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    print(
+        "Warning: readndraft update is deprecated; use the client-native plugin update lifecycle after migration.",
+        file=sys.stderr,
+    )
     parser = argparse.ArgumentParser(description="Check or apply readNdraft client updates")
     commands = parser.add_subparsers(dest="action", required=True)
     for action in ("check", "apply"):

@@ -28,17 +28,13 @@ fails closed in that situation and does not store a plaintext fallback.
 ## Guided setup
 
 ```console
-uvx readndraft-imap-mcp@latest setup --client codex --install-skill
+uvx readndraft-imap-mcp@0.4.0 setup
 ```
 
-Use `claude-code` instead of `codex` for Claude Code. The wizard verifies the
-credential backend, reads the IMAP password through a hidden prompt, tests the
-account before saving it, prints a version-pinned client configuration, and
-installs the packaged Agent Skills.
-
-For Codex, copy the printed `[mcp_servers.readndraft]` table into
-`~/.codex/config.toml`. For Claude Code, follow the
-[Claude Code guide](CLIENT_CLAUDE.md).
+The wizard verifies the credential backend, reads the IMAP password through a
+hidden prompt, and tests the account before saving it. It does not edit Codex or
+Claude configuration. Install the native marketplace plugin using the
+[Codex](CLIENT_CODEX.md) or [Claude Code](CLIENT_CLAUDE.md) guide.
 
 ## Verify
 

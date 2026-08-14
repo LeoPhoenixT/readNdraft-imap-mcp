@@ -55,7 +55,17 @@ class FakeClient:
 def test_unified_help_has_public_commands(capsys) -> None:
     assert main(["--help"]) == 0
     output = capsys.readouterr().out
-    for command in ("setup", "account", "configure", "doctor", "skill", "update", "attachments", "mcp"):
+    for command in (
+        "setup",
+        "account",
+        "configure",
+        "doctor",
+        "skill",
+        "update",
+        "migrate-plugin",
+        "attachments",
+        "mcp",
+    ):
         assert command in output
 
 
@@ -81,22 +91,12 @@ def test_setup_authenticates_then_persists_secret_and_metadata(tmp_path) -> None
     assert "password" not in repr(metadata).casefold()
 
 
-def test_setup_prints_isolated_copy_block_and_next_steps(capsys, tmp_path) -> None:
-    config = "[mcp_servers.readndraft]\nrequired = true\n"
-    skill_target = tmp_path / "readndraft-email"
-
-    _print_client_setup("codex", config, skill_target=skill_target)
-
+def test_setup_points_codex_to_native_plugin(capsys) -> None:
+    _print_client_setup("codex")
     output = capsys.readouterr().out
-    copy_block = (
-        "----- COPY START -----\n"
-        "[mcp_servers.readndraft]\n"
-        "required = true\n"
-        "----- COPY END -----"
-    )
-    assert copy_block in output
-    assert f"----- COPY END -----\n\nAgent Skill\nInstalled at: {skill_target}" in output
-    assert "\n\nNext steps\n1. Add the copied configuration" in output
+    assert "marketplace plugin supplies the MCP server and email skill" in output
+    assert "client's native plugin manager" in output
+    assert "COPY START" not in output
     assert "uvx readndraft-imap-mcp@latest doctor --online" in output
 
 

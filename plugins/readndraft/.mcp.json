@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "readndraft": {
+      "type": "stdio",
+      "command": "uv",
+      "args": ["tool", "run", "readndraft-imap-mcp@0.4.0", "mcp"]
+    }
+  }
+}

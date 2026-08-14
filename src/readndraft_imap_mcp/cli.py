@@ -6,12 +6,13 @@ import sys
 HELP = """usage: readndraft-imap-mcp COMMAND [OPTIONS]
 
 Commands:
-  setup       interactively initialize an account and client
+  setup       interactively initialize an account
   account     add, list, test, enable, disable, rotate, or delete accounts
   configure   print a version-pinned uvx MCP client configuration
   doctor      check local configuration and optional IMAP connectivity
   skill       install, inspect, or remove the packaged Agent Skill
   update      check or apply version-pinned client and skill updates
+  migrate-plugin remove a recognized legacy Codex/Claude installation
   attachments show or open the fixed attachment exchange directories
   audit       verify the integrity-chained local audit log
   mcp         run the on-demand broker and stdio MCP frontend
@@ -39,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
         from readndraft_imap_mcp.platform.skill import main as target
     elif command == "update":
         from readndraft_imap_mcp.platform.update import main as target
+    elif command == "migrate-plugin":
+        from readndraft_imap_mcp.platform.plugin_migration import main as target
     elif command == "attachments":
         from readndraft_imap_mcp.attachments.cli import main as target
     elif command == "audit":
