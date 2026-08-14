@@ -374,9 +374,10 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
         ctx: Context,
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
+        html_body: str | None = None,
         attachment_names: list[str] | None = None,
     ) -> DraftCreationOutput:
-        """Save this exact draft; the broker has no send capability."""
+        """Save a draft; body is plain text and html_body is equivalent optional HTML. No send capability."""
         result = await backend.create_draft(
             account_id,
             to=tuple(to),
@@ -384,6 +385,7 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
             bcc=tuple(bcc or ()),
             subject=subject,
             body=body,
+            html_body=html_body,
             attachment_names=tuple(attachment_names or ()),
             client_id=str(ctx.client_id) if ctx.client_id is not None else None,
         )
@@ -399,9 +401,10 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
         ctx: Context,
         cc: list[str] | None = None,
         bcc: list[str] | None = None,
+        html_body: str | None = None,
         attachment_names: list[str] | None = None,
     ) -> DraftUpdateOutput:
-        """Replace one MCP-created draft; the broker has no send capability."""
+        """Replace a draft; body is plain text and html_body is equivalent optional HTML. No send capability."""
         result = await backend.update_draft(
             account_id,
             draft_id,
@@ -410,6 +413,7 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
             bcc=tuple(bcc or ()),
             subject=subject,
             body=body,
+            html_body=html_body,
             attachment_names=tuple(attachment_names or ()),
             client_id=str(ctx.client_id) if ctx.client_id is not None else None,
         )

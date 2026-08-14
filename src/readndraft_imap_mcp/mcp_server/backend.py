@@ -67,6 +67,7 @@ class ReadOnlyBroker(Protocol):
         bcc: tuple[str, ...] = (),
         subject: str,
         body: str,
+        html_body: str | None = None,
         attachment_names: tuple[str, ...] = (),
         client_id: str | None = None,
     ) -> DraftCreationResult: ...
@@ -81,6 +82,7 @@ class ReadOnlyBroker(Protocol):
         bcc: tuple[str, ...] = (),
         subject: str,
         body: str,
+        html_body: str | None = None,
         attachment_names: tuple[str, ...] = (),
         client_id: str | None = None,
     ) -> DraftUpdateResult: ...

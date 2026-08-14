@@ -95,6 +95,25 @@ def test_skill_explains_cross_platform_attachment_location_and_sender() -> None:
         assert statement in text.casefold()
 
 
+def test_skill_explains_html_read_and_draft_behavior() -> None:
+    text = "\n".join(
+        path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md")
+    )
+    for statement in (
+        "html-only mail",
+        "sanitized rich formatting",
+        "both `body` and `html_body`",
+        "nothing important only in html",
+        "modern mail clients normally display",
+        "do not invent images or remote assets",
+        "complete html document",
+        "validated, sanitized, normalized",
+        "cause the draft request to be rejected",
+        "no url is fetched",
+    ):
+        assert statement in text.casefold()
+
+
 def test_update_skill_is_concise_and_preserves_update_authorization() -> None:
     text = (UPDATE_SKILL / "SKILL.md").read_text(encoding="utf-8")
     _, frontmatter, body = text.split("---", 2)

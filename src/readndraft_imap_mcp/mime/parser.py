@@ -4,8 +4,9 @@ import re
 from email import policy
 from email.message import Message
 from email.parser import BytesParser
-from html import escape
 from html.parser import HTMLParser
+
+from readndraft_imap_mcp.mime.html import sanitize_inbound_html
 
 from readndraft_imap_mcp.imap.models import (
     AttachmentContent,
@@ -23,59 +24,119 @@ class MessageLimitError(ValueError):
     """Raised when a message or selected MIME part exceeds a read budget."""
 
 
-class _SanitizingHTMLParser(HTMLParser):
-    _allowed = {
-        "b", "blockquote", "br", "code", "div", "em", "hr", "i", "li",
-        "ol", "p", "pre", "span", "strong", "table", "tbody", "td", "th",
-        "thead", "tr", "u", "ul",
+class _HTMLToTextParser(HTMLParser):
+    _hidden = {"head", "iframe", "math", "object", "script", "style", "svg", "template"}
+    _blocks = {
+        "blockquote", "div", "h1", "h2", "h3", "h4", "h5", "h6", "hr",
+        "p", "pre", "table", "tr",
     }
-    _blocked = {"embed", "head", "iframe", "math", "object", "script", "style", "svg"}
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.output: list[str] = []
-        self._blocked_depth = 0
+        self._bytes = 0
+        self._hidden_stack: list[str] = []
+        self._lists: list[tuple[str, int]] = []
+
+    def _append(self, value: str) -> None:
+        size = len(value.encode("utf-8"))
+        if self._bytes + size > MAX_TEXT_BYTES:
+            raise MessageLimitError("plain-text body exceeds the 2 MB limit")
+        self.output.append(value)
+        self._bytes += size
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in self._blocked:
-            self._blocked_depth += 1
-        elif not self._blocked_depth and tag in self._allowed:
-            self.output.append(f"<{tag}>")
+        tag = tag.casefold()
+        if tag in self._hidden:
+            self._hidden_stack.append(tag)
+            return
+        if self._hidden_stack:
+            return
+        if tag in self._blocks:
+            self._append("\n\n" if tag != "tr" else "\n")
+        elif tag == "br":
+            self._append("\n")
+        elif tag in {"ul", "ol"}:
+            self._lists.append((tag, 0))
+            self._append("\n")
+        elif tag == "li":
+            prefix = "- "
+            if self._lists and self._lists[-1][0] == "ol":
+                kind, count = self._lists[-1]
+                count += 1
+                self._lists[-1] = (kind, count)
+                prefix = f"{count}. "
+            self._append("\n" + prefix)
+        elif tag in {"td", "th"} and self.output and not self.output[-1].endswith(("\n", "| ")):
+            self._append(" | ")
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if not self._blocked_depth and tag in self._allowed:
-            self.output.append(f"<{tag}>")
+        if tag.casefold() not in self._hidden:
+            self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in self._blocked and self._blocked_depth:
-            self._blocked_depth -= 1
-        elif not self._blocked_depth and tag in self._allowed:
-            self.output.append(f"</{tag}>")
+        tag = tag.casefold()
+        if self._hidden_stack and tag == self._hidden_stack[-1]:
+            self._hidden_stack.pop()
+            return
+        if self._hidden_stack:
+            return
+        if tag in {"ul", "ol"} and self._lists:
+            self._lists.pop()
+            self._append("\n")
+        elif tag in self._blocks or tag == "li":
+            self._append("\n")
 
     def handle_data(self, data: str) -> None:
-        if not self._blocked_depth:
-            self.output.append(escape(data))
+        if not self._hidden_stack:
+            self._append(data)
+
+    def text(self) -> str:
+        lines = [re.sub(r"[ \t\f\v]+", " ", line).strip() for line in "".join(self.output).splitlines()]
+        result: list[str] = []
+        for line in lines:
+            if line or (result and result[-1]):
+                result.append(line)
+        return "\n".join(result).strip()
+
+
+def _body_leaf_parts(message: Message):
+    """Yield body leaves while excluding attachments and related resources."""
+    if message.get_content_disposition() == "attachment" or message.get_filename():
+        return
+    if not message.is_multipart():
+        yield message
+        return
+    parts = list(message.iter_parts())
+    if message.get_content_subtype() == "related" and parts:
+        start = message.get_param("start")
+        root = next((part for part in parts if start and part.get("Content-ID") == start), parts[0])
+        yield from _body_leaf_parts(root)
+        return
+    for part in parts:
+        yield from _body_leaf_parts(part)
+
+
+def _body_value(message: Message, content_type: str) -> str | None:
+    for part in _body_leaf_parts(message):
+        if part.get_content_type() != content_type:
+            continue
+        value = part.get_content()
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
 
 
 def sanitized_html(message: Message) -> str:
-    chunks: list[str] = []
-    total = 0
-    for _, part in _leaf_parts(message):
-        if part.get_content_type() != "text/html":
-            continue
-        if part.get_content_disposition() == "attachment":
-            continue
-        value = part.get_content()
-        if not isinstance(value, str):
-            continue
-        total += len(value.encode("utf-8"))
-        if total > MAX_HTML_BYTES:
-            raise MessageLimitError("HTML body exceeds the 2 MB limit")
-        parser = _SanitizingHTMLParser()
-        parser.feed(value)
-        parser.close()
-        chunks.append("".join(parser.output))
-    return "\n".join(chunks)
+    value = _body_value(message, "text/html")
+    if value is None:
+        return ""
+    if len(value.encode("utf-8")) > MAX_HTML_BYTES:
+        raise MessageLimitError("HTML body exceeds the 2 MB limit")
+    try:
+        return sanitize_inbound_html(value, maximum_bytes=MAX_HTML_BYTES)
+    except ValueError as exc:
+        raise MessageLimitError(str(exc)) from exc
 
 
 def sanitize_filename(filename: str | None) -> str:
@@ -106,21 +167,18 @@ def _leaf_parts(message: Message):
 
 
 def plain_text(message: Message) -> str:
-    chunks: list[str] = []
-    total = 0
-    for _, part in _leaf_parts(message):
-        if part.get_content_type() != "text/plain":
-            continue
-        if part.get_content_disposition() == "attachment":
-            continue
-        value = part.get_content()
-        if not isinstance(value, str):
-            continue
-        total += len(value.encode("utf-8"))
-        if total > MAX_TEXT_BYTES:
+    value = _body_value(message, "text/plain")
+    if value is not None:
+        if len(value.encode("utf-8")) > MAX_TEXT_BYTES:
             raise MessageLimitError("plain-text body exceeds the 2 MB limit")
-        chunks.append(value)
-    return "\n".join(chunks)
+        return value
+    html = _body_value(message, "text/html")
+    if html is None:
+        return ""
+    parser = _HTMLToTextParser()
+    parser.feed(html)
+    parser.close()
+    return parser.text()
 
 
 def attachment_metadata(message: Message) -> tuple[AttachmentMetadata, ...]:

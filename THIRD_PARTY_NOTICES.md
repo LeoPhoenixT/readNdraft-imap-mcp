@@ -7,7 +7,7 @@ its own license and includes its authoritative license material in its upstream
 distribution.
 
 This inventory reflects the runtime dependency graph locked for readNdraft
-0.1.0. Platform markers mean that an individual installation contains only the
+0.3.0. Platform markers mean that an individual installation contains only the
 packages applicable to that operating system.
 
 | Package | Version | License | Platform |
@@ -21,6 +21,7 @@ packages applicable to that operating system.
 | click | 8.4.2 | BSD-3-Clause | All |
 | colorama | 0.4.6 | BSD-3-Clause | Windows |
 | cryptography | 50.0.0 | Apache-2.0 OR BSD-3-Clause | All |
+| css-inline | 0.21.0 | MIT | All |
 | h11 | 0.16.0 | MIT | All |
 | httpcore | 1.0.9 | BSD-3-Clause | All |
 | httpx | 0.28.1 | BSD-3-Clause | All |
@@ -37,6 +38,7 @@ packages applicable to that operating system.
 | mcp | 1.29.0 | MIT | All |
 | mdurl | 0.1.2 | MIT | All |
 | more-itertools | 11.1.0 | MIT | All |
+| nh3 | 0.3.6 | MIT | All |
 | pycparser | 3.0 | BSD-3-Clause | All |
 | pydantic | 2.13.4 | MIT | All |
 | pydantic-core | 2.46.4 | MIT | All |
@@ -55,9 +57,12 @@ packages applicable to that operating system.
 | sse-starlette | 3.4.8 | BSD-3-Clause | All |
 | starlette | 1.6.0 | BSD-3-Clause | All |
 | typer | 0.27.1 | MIT | All |
+| tinycss2 | 1.5.1 | BSD-3-Clause | All |
+| tinyhtml5 | 2.1.0 | MIT | All |
 | typing-extensions | 4.16.0 | PSF-2.0 | All |
 | typing-inspection | 0.4.3 | MIT | All |
 | uvicorn | 0.52.1 | BSD-3-Clause | All |
+| webencodings | 0.5.1 | BSD-3-Clause | All |
 
 Notable conditions:
 
@@ -67,6 +72,15 @@ Notable conditions:
 - pywin32 contains components under different licenses. Its source-tree license
   files and per-file notices are authoritative and must be preserved if pywin32
   is ever bundled or redistributed with readNdraft.
+- nh3 uses the Rust ammonia sanitizer, css-inline uses components from Servo,
+  tinyhtml5 implements WHATWG HTML parsing, and tinycss2 parses CSS syntax. They
+  are used because Python's standard library does not provide a maintained HTML
+  sanitizer, standards-compliant HTML5 parser, CSS parser, or CSS cascade
+  inliner suitable for treating authored email HTML as a security boundary.
+- tinycss2 and webencodings use BSD-3-Clause licenses verified from their
+  upstream license texts; their installed metadata reports only the generic
+  `BSD License` classifier or label, so the license policy check carries narrow
+  reviewed overrides for these two distributions.
 - A future standalone executable, installer, container, or vendored dependency
   bundle must carry the complete applicable third-party license texts and
   notices. This inventory alone is not a substitute for those materials.

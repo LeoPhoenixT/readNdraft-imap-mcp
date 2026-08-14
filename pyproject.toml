@@ -22,9 +22,13 @@ classifiers = [
   "Topic :: Communications :: Email :: Post-Office :: IMAP",
 ]
 dependencies = [
+  "css-inline==0.21.0",
   "keyring==25.7.0",
   "mcp[cli]==1.29.0",
+  "nh3==0.3.6",
   "SecretStorage==3.5.0; sys_platform == 'linux'",
+  "tinycss2==1.5.1",
+  "tinyhtml5==2.1.0",
 ]
 
 [project.urls]

@@ -35,6 +35,8 @@ REVIEWED_OVERRIDES = {
     "colorama": "BSD-3-Clause",
     "pywin32": "MIXED-PER-UPSTREAM",
     "pywin32-ctypes": "BSD-3-Clause",
+    "tinycss2": "BSD-3-Clause",
+    "webencodings": "BSD-3-Clause",
 }
 
 

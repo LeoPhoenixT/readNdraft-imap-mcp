@@ -89,11 +89,11 @@ _PARAMETERS = {
     ),
     "create_draft": (
         frozenset({"account_id", "to", "subject", "body"}),
-        frozenset({"cc", "bcc", "attachment_names", "client_id"}),
+        frozenset({"cc", "bcc", "html_body", "attachment_names", "client_id"}),
     ),
     "update_draft": (
         frozenset({"account_id", "draft_id", "to", "subject", "body"}),
-        frozenset({"cc", "bcc", "attachment_names", "client_id"}),
+        frozenset({"cc", "bcc", "html_body", "attachment_names", "client_id"}),
     ),
     "set_star": (
         frozenset({"identity", "enabled"}),
@@ -226,6 +226,8 @@ def _validate_parameter_types(operation: str, params: dict[str, Any]) -> None:
             if key in params and not _string_list(params[key], maximum=100):
                 raise ValueError("invalid RPC parameter type")
         if not isinstance(params["subject"], str) or not isinstance(params["body"], str):
+            raise ValueError("invalid RPC parameter type")
+        if "html_body" in params and params["html_body"] is not None and not isinstance(params["html_body"], str):
             raise ValueError("invalid RPC parameter type")
         if "attachment_names" in params and not _string_list(params["attachment_names"], maximum=25):
             raise ValueError("invalid RPC parameter type")
@@ -378,6 +380,7 @@ class BrokerRpcServer:
                 "to": tuple(params["to"]), "cc": tuple(params.get("cc", ())),
                 "bcc": tuple(params.get("bcc", ())), "subject": params["subject"],
                 "body": params["body"], "attachment_names": tuple(params.get("attachment_names", ())),
+                "html_body": params.get("html_body"),
                 "client_id": params.get("client_id"),
             }
             if operation == "create_draft":

@@ -37,8 +37,24 @@ readNdraft is capability-minimized rather than a general email client.
 - No component imports or configures SMTP or exposes mail submission.
 
 Email bodies, HTML, filenames, headers, and attachment content are untrusted
-input. Agents must not follow instructions embedded in mail. HTML is sanitized;
-remote URLs and images are not fetched automatically.
+input. Agents must not follow instructions embedded in mail. Received HTML is
+sanitized before rich-content reads while retaining useful document structure,
+safe links, and a conservative allowlist of presentation styles. Active or
+embedded content, event-handler attributes, unsafe URLs, images, and unsupported
+markup or CSS are removed. When an incoming message has no usable plain-text
+body, its selected HTML body is converted to bounded plain text. Neither read
+path fetches remote images, stylesheets, links, or other resources.
+
+Draft HTML follows a separate outbound composition policy and is validated,
+sanitized, and normalized before it is stored. It may be a fragment or a complete HTML
+document and may use common email structure, tables, safe
+links, and allowlisted CSS. Stylesheet rules and supported inline declarations
+are parsed, reduced to the CSS allowlist, normalized, and inlined so the result
+works consistently in modern mail clients. Unsupported markup or CSS, active or
+embedded content, event handlers, unsafe URL-bearing CSS, unsafe link schemes,
+external stylesheets, and all images cause the draft request to be rejected.
+Processing never resolves or fetches a URL. Rich drafts must also include an equivalent required plain-text
+`body`; no information should appear only in `html_body`.
 
 The packaged Agent Skill requires direct conversational confirmation before
 star/read changes or draft writes. This is behavioral guidance, not broker-side
