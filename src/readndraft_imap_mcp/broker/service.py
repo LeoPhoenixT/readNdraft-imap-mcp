@@ -525,6 +525,7 @@ class BrokerService:
         bcc: tuple[str, ...] = (),
         subject: str,
         body: str,
+        html_body: str | None = None,
         attachment_names: tuple[str, ...] = (),
         client_id: str | None = None,
     ) -> DraftCreationResult:
@@ -542,6 +543,7 @@ class BrokerService:
             bcc=bcc,
             subject=subject,
             body=body,
+            html_body=html_body,
             attachments=prepared_attachments,
         )
         raw, message_id = build_draft_message(account.effective_sender_address, draft)
@@ -616,6 +618,7 @@ class BrokerService:
         bcc: tuple[str, ...] = (),
         subject: str,
         body: str,
+        html_body: str | None = None,
         attachment_names: tuple[str, ...] = (),
         client_id: str | None = None,
     ) -> DraftUpdateResult:
@@ -636,6 +639,7 @@ class BrokerService:
             bcc=bcc,
             subject=subject,
             body=body,
+            html_body=html_body,
             attachments=prepared_attachments,
         )
         raw, message_id = build_draft_message(

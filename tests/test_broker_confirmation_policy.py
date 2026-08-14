@@ -26,6 +26,7 @@ class Credentials:
 
 class Client:
     draft_senders = []
+    draft_messages = []
 
     def __init__(self, account, secret):
         pass
@@ -43,17 +44,17 @@ class Client:
         return HtmlContent(identity, "<p>safe</p>", ())
 
     def append_draft(self, raw, message_id, attachment_hashes):
-        self.draft_senders.append(
-            BytesParser(policy=policy.default).parsebytes(raw)["From"]
-        )
+        message = BytesParser(policy=policy.default).parsebytes(raw)
+        self.draft_senders.append(message["From"])
+        self.draft_messages.append(message)
         return DraftCreationResult(
             "personal", "Drafts", "42", "99", message_id, attachment_hashes
         )
 
     def replace_draft(self, record, raw, message_id, attachment_hashes):
-        self.draft_senders.append(
-            BytesParser(policy=policy.default).parsebytes(raw)["From"]
-        )
+        message = BytesParser(policy=policy.default).parsebytes(raw)
+        self.draft_senders.append(message["From"])
+        self.draft_messages.append(message)
         return DraftUpdateResult(
             "personal",
             record.draft_id,
@@ -132,6 +133,34 @@ def test_draft_creation_and_update_have_no_runtime_approval(tmp_path) -> None:
         "update_draft",
     ]
     assert all(event.approval_required is False for event in audit.events)
+
+
+def test_broker_adds_updates_and_removes_html_without_changing_message_id(tmp_path) -> None:
+    Client.draft_messages = []
+    broker = build_broker(tmp_path, Audit())
+    created = asyncio.run(
+        broker.create_draft(
+            "personal", to=("recipient@example.com",), subject="draft",
+            body="plain one", html_body="<p><strong>rich one</strong></p>",
+        )
+    )
+    asyncio.run(
+        broker.update_draft(
+            "personal", created.draft_id, to=("recipient@example.com",),
+            subject="draft", body="plain two", html_body="<p>rich two</p>",
+        )
+    )
+    asyncio.run(
+        broker.update_draft(
+            "personal", created.draft_id, to=("recipient@example.com",),
+            subject="draft", body="plain three", html_body=None,
+        )
+    )
+
+    assert [item.get_content_type() for item in Client.draft_messages] == [
+        "multipart/alternative", "multipart/alternative", "text/plain",
+    ]
+    assert len({str(item["Message-ID"]) for item in Client.draft_messages}) == 1
 
 
 def test_drafts_use_pinned_sender_for_create_and_update(tmp_path) -> None:

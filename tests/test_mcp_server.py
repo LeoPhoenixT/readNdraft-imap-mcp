@@ -103,6 +103,7 @@ class FakeBroker:
     async def create_draft(self, account_id, **kwargs):
         assert account_id == "personal"
         assert kwargs["to"] == ("recipient@example.com",)
+        assert kwargs.get("html_body") == "<p>body</p>"
         return DraftCreationResult(
             "personal", "Drafts", "42", "99", "<draft@example.com>", (), "draft-1"
         )
@@ -110,6 +111,7 @@ class FakeBroker:
     async def update_draft(self, account_id, draft_id, **kwargs):
         assert (account_id, draft_id) == ("personal", "draft-1")
         assert kwargs["subject"] == "updated"
+        assert kwargs.get("html_body") is None
         return DraftUpdateResult(
             "personal",
             "draft-1",
@@ -298,6 +300,7 @@ async def exercise_server() -> None:
                 "to": ["recipient@example.com"],
                 "subject": "draft",
                 "body": "body",
+                "html_body": "<p>body</p>",
             },
         )
         assert draft.isError is False, draft.content
@@ -313,6 +316,7 @@ async def exercise_server() -> None:
                 "to": ["recipient@example.com"],
                 "subject": "updated",
                 "body": "body two",
+                "html_body": None,
             },
         )
         assert updated.isError is False, updated.content

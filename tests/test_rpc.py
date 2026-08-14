@@ -115,10 +115,17 @@ def test_rpc_rejects_type_confused_writes() -> None:
     for operation, params in (
         ("set_star", {"identity": {"account_id": "a", "mailbox": "INBOX", "uid_validity": "1", "uid": "2"}, "enabled": "false"}),
         ("create_draft", {"account_id": "a", "to": "x@example.com", "subject": "s", "body": "b"}),
+        ("create_draft", {"account_id": "a", "to": ["x@example.com"], "subject": "s", "body": "b", "html_body": 7}),
     ):
         response = json.loads(server.handle_frame(_frame(operation, params)))
         assert response["ok"] is False
         assert response["error"]["type"] == "invalid_request"
+
+
+def test_rpc_accepts_optional_html_body() -> None:
+    base = {"account_id": "a", "to": ["x@example.com"], "subject": "s", "body": "b"}
+    assert _decode_request(_frame("create_draft", {**base, "html_body": "<p>b</p>"}))["params"]["html_body"] == "<p>b</p>"
+    assert _decode_request(_frame("create_draft", {**base, "html_body": None}))["params"]["html_body"] is None
 
 
 def test_rpc_move_contract_is_exact_and_serializes_results() -> None:

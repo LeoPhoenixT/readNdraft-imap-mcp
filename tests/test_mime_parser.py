@@ -73,6 +73,133 @@ def test_html_is_allowlisted_and_active_content_is_removed() -> None:
     assert result.strip() == "<p>Safe &amp; sound</p>"
 
 
+def test_inbound_html_preserves_safe_links_tables_and_inline_css() -> None:
+    message = EmailMessage()
+    message.set_content("plain")
+    message.add_alternative(
+        '<p style="color:#123456; padding:8px; position:fixed">See '
+        '<a href="https://example.com/report">report</a>.</p>'
+        '<table role="presentation" width="100%" style="border-collapse:collapse">'
+        '<tr><td style="border:1px solid #333; text-align:center">Done</td></tr></table>',
+        subtype="html",
+    )
+
+    result = sanitized_html(parse_message(message.as_bytes()))
+
+    assert 'href="https://example.com/report"' in result
+    assert 'rel="noopener noreferrer"' in result
+    assert 'style="color:#123456;padding:8px"' in result
+    assert "position" not in result
+    assert 'role="presentation"' in result
+    assert 'width="100%"' in result
+    assert "border-collapse:collapse" in result
+    assert "border:1px solid #333" in result
+
+
+def test_inbound_html_strips_unsafe_links_images_and_stylesheets() -> None:
+    message = EmailMessage()
+    message.set_content("plain")
+    message.add_alternative(
+        '<link rel="stylesheet" href="https://tracker.example/x.css">'
+        '<a href="java&#x0a;script:alert(1)">bad</a>'
+        '<img src="https://tracker.example/pixel"><p>Visible</p>',
+        subtype="html",
+    )
+
+    result = sanitized_html(parse_message(message.as_bytes()))
+
+    assert "tracker.example" not in result
+    assert "href=" not in result
+    assert "img" not in result
+    assert "Visible" in result
+
+
+def test_html_only_message_has_structured_plain_text_fallback() -> None:
+    message = EmailMessage()
+    message.set_content(
+        "<h2>Report</h2><p>Hello</p><p>World</p>"
+        "<ol><li>First</li><li>Second</li></ol>"
+        "<table><tr><th>Name</th><th>Status</th></tr>"
+        "<tr><td>Leo</td><td>Complete</td></tr></table>",
+        subtype="html",
+    )
+
+    result = plain_text(parse_message(message.as_bytes()))
+
+    assert "Report" in result
+    assert "Hello\n\nWorld" in result
+    assert "1. First" in result
+    assert "2. Second" in result
+    assert "Name | Status" in result
+    assert "Leo | Complete" in result
+
+
+def test_plain_alternative_is_preferred_over_html() -> None:
+    message = EmailMessage()
+    message.set_content("preferred plain")
+    message.add_alternative("<p>HTML equivalent</p>", subtype="html")
+
+    assert plain_text(parse_message(message.as_bytes())).strip() == "preferred plain"
+
+
+def test_whitespace_plain_alternative_falls_back_to_html() -> None:
+    message = EmailMessage()
+    message.set_content("   \n")
+    message.add_alternative("<p>Readable HTML</p>", subtype="html")
+
+    assert plain_text(parse_message(message.as_bytes())) == "Readable HTML"
+
+
+def test_attached_message_bodies_are_not_parent_body_content() -> None:
+    attached = EmailMessage()
+    attached.set_content("secret attached plain")
+    attached.add_alternative("<p>secret attached HTML</p>", subtype="html")
+    parent = EmailMessage()
+    parent.set_content("parent body")
+    parent.add_attachment(attached)
+
+    parsed = parse_message(parent.as_bytes())
+    assert plain_text(parsed).strip() == "parent body"
+    assert sanitized_html(parsed) == ""
+
+
+def test_related_uses_root_html_and_ignores_related_resources() -> None:
+    message = EmailMessage()
+    message.set_content("<p>Root body</p>", subtype="html")
+    message.make_related()
+    resource = EmailMessage()
+    resource.set_content("not body text")
+    resource["Content-ID"] = "<resource>"
+    message.attach(resource)
+
+    parsed = parse_message(message.as_bytes())
+    assert plain_text(parsed) == "Root body"
+    assert sanitized_html(parsed).strip() == "<p>Root body</p>"
+
+
+def test_hidden_html_content_is_not_emitted_in_plain_fallback() -> None:
+    message = EmailMessage()
+    message.set_content(
+        "<script>secret()</script><style>.hidden{}</style>"
+        "<iframe>hidden frame</iframe><p>Visible</p>",
+        subtype="html",
+    )
+
+    assert plain_text(parse_message(message.as_bytes())) == "Visible"
+
+
+def test_mismatched_hidden_tags_do_not_expose_active_content() -> None:
+    message = EmailMessage()
+    message.set_content(
+        "<script>first</style>still hidden</script><p>Visible</p>",
+        subtype="html",
+    )
+
+    parsed = parse_message(message.as_bytes())
+    assert plain_text(parsed) == "Visible"
+    assert sanitized_html(parsed).strip() == "<p>Visible</p>"
+
+
 @pytest.mark.parametrize(
     "hostile",
     (

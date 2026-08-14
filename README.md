@@ -125,7 +125,9 @@ while uv downloads the pinned package. If a stored password has changed, run
   single-mailbox cursor pagination, per-target safe errors, attempted/pending
   target status, selectable safe header fields, and server arrival timestamps.
   Requests above 50 require one account and one mailbox.
-- Read safe headers and plain text without setting the Seen flag.
+- Read safe headers and preferred plain text without setting the Seen flag.
+  HTML-only messages are converted into a bounded, readable plain-text
+  representation; `get_email_html` remains available for sanitized rich HTML.
 - Batch-read plain text for up to 10 selected messages across 2 accounts.
 - Read sanitized HTML without loading remote content.
 - Save one selected, bounded attachment into a fixed private output directory and
@@ -138,9 +140,14 @@ while uv downloads the pinned package. If a stored password has changed, run
   `\Deleted`, and targeted UID EXPUNGE sequence. Both source and destination
   must be existing selectable ordinary mailboxes; movement into or out of
   `\Trash`, `\Junk`, `\Drafts`, or `\Sent` SPECIAL-USE mailboxes is prohibited.
-- Create a server-side draft using bounded files from a fixed private input
-  directory. To, Cc, and Bcc may all be empty when the user wants an
-  unaddressed draft.
+- Create a plain-text or rich HTML server-side draft using bounded files from a
+  fixed private input directory. Rich drafts require equivalent `body` plain
+  text and optional `html_body` HTML. They are stored as
+  `multipart/alternative`, with plain text first and HTML second, so modern mail
+  clients normally display HTML while other clients retain a plain fallback.
+  Rich input may be an HTML fragment or a complete HTML document. Supported
+  email-safe CSS is normalized and inlined for broad mail-client compatibility.
+  To, Cc, and Bcc may all be empty when the user wants an unaddressed draft.
 - Update only a draft previously created by this MCP, after confirmation.
 
 It exposes no send, submission, ordinary-message deletion, raw IMAP, arbitrary
@@ -403,8 +410,16 @@ readNdraft.
 
 The stdio MCP frontend cannot read the account file or OS credential store. It
 communicates over authenticated per-user IPC with a separate broker that enforces
-capabilities, quotas, provenance, and audit. Email and attachments are
-always untrusted input and remote images or URLs are never fetched automatically.
+capabilities, quotas, provenance, and audit. Email and attachments are always
+untrusted input. Received HTML is sanitized for rich reads while preserving
+useful email structure, safe links, and a conservative set of presentation
+styles; HTML-only mail is converted to plain text for normal reads. Draft HTML
+is also sanitized and normalized before storage. It accepts common modern email
+markup, complete HTML documents, safe links, and allowlisted CSS; stylesheet
+rules are inlined for mail-client compatibility. Active content, event handlers,
+unsafe URL schemes, external stylesheets, and images cause draft creation or
+update to be rejected. Remote images, stylesheets, links,
+or other URLs are never fetched automatically.
 MCP tools never accept arbitrary local paths: draft files come only from the
 readNdraft attachment input directory and downloaded attachments are written
 only to its output directory. Run `readndraft-imap-mcp attachments path` to

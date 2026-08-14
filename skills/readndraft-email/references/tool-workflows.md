@@ -29,7 +29,10 @@ unless the user separately requests a state change.
 
 ## HTML and attachments
 
-Prefer `get_email`. Call `get_email_html` only for HTML the user requested.
+Prefer `get_email`: it returns the actual plain body when available and derives
+readable plain text from the selected HTML body for HTML-only mail. Call
+`get_email_html` only when the user needs sanitized rich formatting or structure.
+Neither read path fetches remote resources.
 Attachment metadata comes from `get_email`. Pass its exact `attachment_id` and
 the same complete identity to `save_attachment`; it writes only to readNdraft's
 fixed output directory. Its `saved_path` is the authoritative absolute path in
@@ -58,13 +61,25 @@ Never retry an ambiguous connection or `broker_error` automatically.
 
 Resolve the account with `list_accounts`, then present its exact `sender_address`,
 account, recipients, subject, body, and attachment names and obtain direct user
-confirmation. To, Cc, and Bcc may all be empty; explicitly present that there
-are no recipients rather than inventing one or refusing the draft. The sender is
-pinned account metadata, not a draft argument. Call `create_draft` once with the
-unchanged payload and retain the returned `draft_id`. Before `update_draft`,
-present the full replacement and confirm again. Updating replaces and expunges
-the prior tracked draft version. Neither operation sends mail or deletes an
-ordinary message.
+confirmation. For a plain draft, provide required `body`. For a rich draft,
+provide both `body` and `html_body`, and ensure they communicate the same content
+with nothing important only in HTML. Modern mail clients normally display the
+HTML alternative while the required body remains the plain fallback. `html_body`
+may be a fragment or a complete HTML document. Supported HTML covers common
+modern email structure such as paragraphs, headings, emphasis, lists,
+blockquotes, safe links, and tables. Conservative presentation CSS is accepted,
+normalized, and inlined for mail-client compatibility. Do not add images,
+active content, event handlers, unsafe URLs, or invented remote assets;
+unsupported or unsafe markup and styles cause the draft request to be rejected,
+and no URL is fetched.
+To, Cc, and Bcc may all be empty; explicitly present that there are no
+recipients rather than inventing one
+or refusing the draft. The sender is pinned account metadata, not a draft
+argument. Call `create_draft` once with the unchanged payload and retain the
+returned `draft_id`. Before `update_draft`, present the full replacement,
+including both representations when rich, and confirm again. Updating replaces
+and expunges the prior tracked draft version. Neither operation sends mail or
+deletes an ordinary message.
 
 ## Move messages
 

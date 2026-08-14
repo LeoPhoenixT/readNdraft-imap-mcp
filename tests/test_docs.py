@@ -16,9 +16,31 @@ def test_readme_documents_uvx_setup_security_and_support() -> None:
         "broker prefers",
         "not MCP tools",
         "ambiguous move outcome",
+        "`multipart/alternative`",
+        "HTML-only messages are converted",
+        "complete HTML documents",
+        "allowlisted CSS",
+        "never fetched automatically",
     ):
         assert required in text
     assert "uvx readndraft-imap-mcp approve" not in text
+
+
+def test_security_document_explains_inbound_and_outbound_html_policies() -> None:
+    text = Path("docs/SECURITY.md").read_text(encoding="utf-8")
+    for required in (
+        "selected HTML body is converted to bounded plain text",
+        "separate outbound composition policy",
+        "safe links",
+        "CSS allowlist",
+        "normalized, and inlined",
+        "all images cause the draft request to be rejected",
+        "Processing never resolves",
+        "fetches a URL",
+        "equivalent required plain-text",
+        "`body`",
+    ):
+        assert required in text
 
 
 def test_readme_repository_markdown_links_exist_and_are_pypi_safe() -> None:
