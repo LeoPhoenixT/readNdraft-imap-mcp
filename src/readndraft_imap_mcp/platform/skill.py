@@ -6,6 +6,7 @@ import json
 import os
 import secrets
 import shutil
+import sys
 from pathlib import Path
 
 from .paths import AppPaths, current_app_paths
@@ -25,7 +26,12 @@ def bundled_skill_dir(skill_name: str = DEFAULT_SKILL_NAME) -> Path:
     packaged = Path(__file__).resolve().parents[1] / "_skills" / skill_name
     if packaged.is_dir():
         return packaged
-    repository = Path(__file__).resolve().parents[3] / "skills" / skill_name
+    repository_root = Path(__file__).resolve().parents[3]
+    repository = (
+        repository_root / "plugins" / "readndraft" / "skills" / skill_name
+        if skill_name == DEFAULT_SKILL_NAME
+        else repository_root / "skills" / skill_name
+    )
     if repository.is_dir():
         return repository
     raise RuntimeError("packaged readNdraft skill is unavailable")
@@ -215,6 +221,10 @@ def uninstall_skill(
 
 
 def main(argv: list[str] | None = None) -> int:
+    print(
+        "Warning: direct skill installation is deprecated; Claude Code and Codex users should install the readNdraft plugin.",
+        file=sys.stderr,
+    )
     parser = argparse.ArgumentParser(description="Manage the packaged readNdraft Agent Skill")
     commands = parser.add_subparsers(dest="action", required=True)
     for name in ("install", "uninstall", "status"):

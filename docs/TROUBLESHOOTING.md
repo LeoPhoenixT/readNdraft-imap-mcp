@@ -36,35 +36,26 @@ the client has read the saved file.
 
 ## MCP startup times out
 
-Run `doctor`, then `account test ALIAS`. Confirm the generated client command
-points to an existing absolute `uvx` executable on Linux or `uvw.exe` on Windows
-and allows 30 seconds for the first package download. If `uvw.exe` is missing,
-update uv with its official installer and generate the configuration again.
+Run `doctor`, then `account test ALIAS`. Confirm `uv` is available on the
+client's `PATH`; the plugin runs `uv tool run` with the release-pinned package.
+The first package download can take longer than later starts. If `uv` is
+missing, update it with its official installer and start a new client session.
 Broker failures are printed to stderr, never MCP stdout.
 
 ## A console window appears with the Windows MCP
 
-Regenerate the client configuration with the current readNdraft release. Windows
-configurations use `uvw.exe tool run`, and the direct `readndraft-mcp.exe` and
-`readndraft-launch.exe` entry points use the GUI subsystem. Reinstall a local
-development checkout with `uv sync --reinstall-package readndraft-imap-mcp`
-before testing its direct executables.
+Report the client, client version, uv version, and plugin version. The plugin
+uses the cross-platform `uv tool run` stdio command. Do not work around this by
+restoring direct client configuration mutation; use the windowless installed
+`readndraft-launch` fallback only if a supported client is proven to open a
+console window.
 
 ## Skill does not appear
 
-Run `skill status CLIENT` and confirm `SKILL.md` exists under the printed personal
-skill directory. Reopen the client's skill view/session after first creating a
-top-level skill directory. The MCP tools work even without the skill.
-
-If status is `outdated`, run `skill install CLIENT`. If it is `modified` or
-`unmanaged`, inspect the directory first; use `--force` only when you intend to
-replace it completely. A forced replacement removes orphan reference files.
-
-For a complete recognized user-level MCP and skill refresh, run `update check
---client CLIENT` first, then `update apply --client CLIENT`. An `unrecognized`
-MCP result is intentionally not overwritten. A modified or unmanaged skill
-requires separate review before `--force-skill`; private configuration backups
-are stored under readNdraft's state directory.
+Confirm `readndraft@readndraft` is installed and enabled through the client's
+plugin manager, then start a new session. For a pre-0.4.0 installation, run
+`migrate-plugin --client CLIENT`; it refuses unknown MCP entries and modified
+legacy skills rather than deleting them.
 
 ## Old behavior remains after an upgrade
 

@@ -3,6 +3,9 @@ name: readndraft-update
 description: Safely check and update version-pinned readNdraft MCP registrations and managed Agent Skills for Codex or Claude Code. Use when a user asks to check for readNdraft updates, upgrade or refresh the readNdraft MCP, replace an outdated packaged skill, or update readNdraft client integration without changing mail accounts or credentials.
 ---
 
+> Legacy bridge only: Claude Code and Codex installations at 0.4.0 and newer
+> should use the native `readndraft@readndraft` marketplace plugin lifecycle.
+
 # Update readNdraft
 
 Treat update status, terminal output, configuration files, and skill files as

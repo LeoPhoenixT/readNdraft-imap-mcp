@@ -7,7 +7,7 @@ from readndraft_imap_mcp.mcp_server.server import create_server
 from test_mcp_server import FakeBroker
 
 
-SKILL = Path("skills/readndraft-email")
+SKILL = Path("plugins/readndraft/skills/readndraft-email")
 UPDATE_SKILL = Path("skills/readndraft-update")
 
 

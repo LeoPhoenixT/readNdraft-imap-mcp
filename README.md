@@ -26,17 +26,17 @@ uv --version
 No repository clone or permanent readNdraft installation is required. `uvx`
 runs the published package in an isolated environment.
 
-### 2. Run guided setup
+### 2. Configure an account
 
-For Codex, run this command in a real interactive terminal:
+Run guided setup in a real interactive terminal:
 
 ```console
-uvx readndraft-imap-mcp@latest setup --client codex --install-skill
+uvx readndraft-imap-mcp@0.4.0 setup
 ```
 
-Use `claude-code` instead of `codex` when configuring Claude Code. For ChatGPT
-desktop, omit `--install-skill` and use `--client chatgpt-desktop`; setup prints
-its MCP configuration but does not install an Agent Skill for that client.
+This configures only readNdraft's local account, credential, and private state.
+Claude Code and Codex own their plugin, MCP registration, updates, and removal.
+ChatGPT desktop remains a separate manual MCP configuration target.
 
 | Client | Setup value | Detailed guide |
 | --- | --- | --- |
@@ -54,36 +54,35 @@ The wizard will:
 2. Ask for an account alias, IMAP host, port, username, and authentication method.
 3. Read the password or app password through a hidden terminal prompt.
 4. Test the IMAP connection before saving the account.
-5. Print a secret-free, version-pinned MCP configuration.
-6. Install the packaged `readndraft-email` and `readndraft-update` Agent Skills
-   when the selected client is Codex or Claude Code and skill installation was
-   requested. ChatGPT desktop setup configures only the MCP.
 
 Never put an IMAP password in a command argument, environment variable, MCP
 configuration, issue, chat, or test report.
 
-### 3. Add the generated client configuration
+### 3. Install the marketplace plugin
 
-Copy the configuration printed by setup into your client's MCP configuration.
-For Codex, add the printed `[mcp_servers.readndraft]` section to:
+The repository is the marketplace source; this is not GitHub Marketplace.
 
-- Windows: `%USERPROFILE%\.codex\config.toml`
-- Linux: `~/.codex/config.toml`
+For Codex:
 
-The generated command pins the package version so a future release cannot
-silently change this security-sensitive MCP at startup. On Windows it uses
-`uvw`, uv's consoleless launcher, so the MCP does not open a terminal window.
-The Codex configuration also sets `default_tools_approval_mode = "approve"` to
-avoid native tool-approval popups. Write operations still require direct
-conversational confirmation through the packaged Agent Skill.
+```console
+codex plugin marketplace add LeoPhoenixT/readNdraft-imap-mcp
+codex plugin add readndraft@readndraft
+```
 
-See the [Codex/ChatGPT guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/CLIENT_CODEX.md) or
-[Claude Code guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/CLIENT_CLAUDE.md)
-for client-specific details.
+For Claude Code, run these commands inside Claude Code:
+
+```text
+/plugin marketplace add LeoPhoenixT/readNdraft-imap-mcp
+/plugin install readndraft@readndraft
+```
+
+The plugin supplies one shared `readndraft-email` skill and a local stdio MCP
+definition pinned to `readndraft-imap-mcp@0.4.0`. It does not contain secrets,
+account data, or a send capability.
 
 ### 4. Restart and verify
 
-Fully restart the client after changing its MCP configuration. Then run an
+Start a new client session after installing the plugin. Then run an
 online diagnostic from a terminal:
 
 ```console
@@ -104,9 +103,9 @@ local broker.
 
 | Item | Location or behavior |
 | --- | --- |
-| Runtime | Downloaded and run in uv's isolated cache; no repository clone is needed. |
-| Client configuration | Stored by the selected client and contains no IMAP password. |
-| Agent Skills | `readndraft-email` and `readndraft-update` under `~/.agents/skills` for Codex or `~/.claude/skills` for Claude Code. |
+| Runtime | Version-pinned by the plugin and run in uv's isolated cache. |
+| Client integration | Marketplace/plugin state owned by Claude Code or Codex; it contains no IMAP password. |
+| Agent Skill | `readndraft-email`, supplied by the installed plugin. |
 | IMAP password | Stored only in Windows Credential Manager or the Linux Secret Service keyring. |
 | Account metadata and app state | Stored in private per-user readNdraft application directories. |
 
@@ -183,19 +182,18 @@ cleared, it falls back to the username. MCP `list_accounts` exposes the effectiv
 sender so an agent can confirm it, but MCP cannot change it or override it per
 draft.
 
-## Configure another MCP client
+## Configure ChatGPT desktop
 
 Generate a secret-free configuration:
 
 ```console
-uvx readndraft-imap-mcp@latest configure codex
 uvx readndraft-imap-mcp@latest configure chatgpt-desktop
-uvx readndraft-imap-mcp@latest configure claude-code
 ```
 
-Use these commands to generate another client configuration without repeating
-account setup. Each command prints a secret-free configuration pinned to the
-readNdraft version that generated it.
+This manual configuration path is retained for ChatGPT desktop, which is not
+covered by the Claude Code/Codex marketplace migration. The `configure codex`
+and `configure claude-code` forms remain temporarily available only for legacy
+0.3.x compatibility and are not the normal installation path.
 
 The unified `mcp` command uses the authenticated on-demand launcher. It reuses a
 healthy broker, starts exactly one when needed, and holds an authenticated lease
@@ -204,35 +202,27 @@ the final frontend disconnects and the idle period expires. Always-on systemd
 and Windows scheduled-task deployments remain available through the legacy
 administration documentation.
 
-## Install the Agent Skills
+## Upgrading from 0.3.x or earlier
 
-The MCP is usable without a skill, but the packaged `readndraft-email` skill
-teaches compatible agents to preserve complete message identities, interpret
-results correctly, choose bounded batch tools only for user-selected messages,
-treat email as untrusted input, and obtain direct conversational confirmation
-before writes without inventing capabilities.
+Installing a plugin does not automatically remove an older user-scoped MCP
+entry, and that entry can override the plugin. First run the one-time migration
+for the client you previously configured:
 
 ```console
-uvx readndraft-imap-mcp skill install codex
-uvx readndraft-imap-mcp skill install claude-code
-uvx readndraft-imap-mcp skill status codex
-uvx readndraft-imap-mcp skill install readndraft-update codex
-uvx readndraft-imap-mcp skill status --all codex
-uvx readndraft-imap-mcp skill print
+uvx readndraft-imap-mcp@0.4.0 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.4.0 migrate-plugin --client claude-code
 ```
 
-The installer refuses to overwrite or remove a user-modified skill. Codex loads
-personal skills from `~/.agents/skills`; Claude Code loads them from
-`~/.claude/skills`.
+The migration removes only a legacy MCP invocation recognized as having been
+created by readNdraft and only unmodified, managed legacy skill directories. It
+refuses unknown/custom MCP entries and modified or unmanaged skills. It never
+touches accounts, OS keyring credentials, audit history, attachments, drafts,
+or old `update-backups`. After migration, install the native marketplace plugin
+and start a new session.
 
-ChatGPT desktop has no managed skill target in this package. Configure its MCP
-with `configure chatgpt-desktop`; do not pass `chatgpt-desktop` to `skill`.
-
-The legacy `skill install CLIENT` form manages `readndraft-email`. Setup and the
-updater manage both packaged skills. `skill status [SKILL] CLIENT` reports
-`current`, `outdated`, `modified`, `unmanaged`, or `not installed`; `--all`
-checks both. Use `skill install [SKILL] CLIENT --force` only when intentionally
-replacing a modified or unmanaged copy; replacement removes stale orphan files.
+The `skill` and `update` commands and the `readndraft-update` skill remain in
+0.4.0 only as a deprecated bridge for existing installations. New installations
+must use the client-native plugin lifecycle.
 
 ## Authorization boundary
 
@@ -266,74 +256,17 @@ or message content. See [troubleshooting](https://github.com/LeoPhoenixT/readNdr
 
 ## Updating
 
-Client configurations are version-pinned. Running `uvx ...@latest` by itself
-does not update the version that a configured MCP client starts.
-
-### 1. Check without changing anything
-
-Run the latest package's read-only update check:
-
-```console
-uvx readndraft-imap-mcp@latest update check --client codex
-uvx readndraft-imap-mcp@latest update check --client claude-code
-```
-
-Use `--all` to inspect both clients. The check reports the pinned MCP version,
-the latest package version, both managed skill states, and whether a restart is
-required. It does not write configuration or skill files.
-
-### 2. Apply a recognized user-level update
-
-After reviewing the report, update one client interactively:
-
-```console
-uvx readndraft-imap-mcp@latest update apply --client codex
-uvx readndraft-imap-mcp@latest update apply --client claude-code
-```
-
-The updater changes only a recognized user-level `readndraft` registration,
-pins it to the exact package version performing the update, installs both
-packaged skills from that version, creates a private configuration backup, and
-verifies the result. It refuses unrecognized MCP entries. Modified or unmanaged
-skills also block normal updates; inspect them before separately authorizing:
-
-```console
-uvx readndraft-imap-mcp@latest update apply --client codex --force-skill
-```
-
-`--force-skill` affects only the two skill directories and never authorizes
-replacement of an unrecognized MCP entry. Automation may pass `--yes` only
-after obtaining direct user confirmation. ChatGPT desktop remains a manual
-configuration target and is not accepted by `update`.
-
-### 3. Bootstrap the updater skill on an older installation
-
-If `readndraft-update` was not installed by the original setup, install it once:
-
-```console
-uvx readndraft-imap-mcp@latest skill install readndraft-update codex
-uvx readndraft-imap-mcp@latest skill install readndraft-update claude-code
-```
-
-The updater skill performs the read-only check first, presents the exact scope,
-and requires confirmation immediately before applying an update.
-
-### 4. Restart and verify
-
-Fully close and restart every configured client, then run:
+Use the client's native marketplace/plugin update command. Plugin release,
+Claude manifest, Codex manifest, and pinned PyPI runtime versions are validated
+as one compatibility unit. Start a new session after an update, then run:
 
 ```console
 uvx readndraft-imap-mcp@latest doctor --online
 ```
 
-Confirm the new pinned version in the client configuration, reconnect the MCP,
-and perform a harmless mailbox listing and one-result search.
-
-Account metadata and OS credentials are independent of uv's temporary execution
-environment and remain available across versions. Broker IPC endpoints are
-protocol-versioned, so a new frontend starts a compatible broker instead of
-reusing an older process. The old broker exits after its final client lease and
-idle timeout.
+Account metadata and OS credentials remain independent of the plugin lifecycle.
+The legacy `readndraft-imap-mcp update` command is deprecated in this bridge
+release and should be used only to prepare an old installation for migration.
 
 ## Uninstalling
 
@@ -341,36 +274,18 @@ Choose whether to remove only the MCP integration or all local readNdraft data.
 Removing client entries and skills leaves accounts, credentials, audit history,
 draft provenance, and attachment exchange files available for a later reinstall.
 
-### 1. Remove every client entry
+### 1. Remove the plugin
 
-- Codex: remove the complete `[mcp_servers.readndraft]` table from
-  `%USERPROFILE%\.codex\config.toml` on Windows or `~/.codex/config.toml` on
-  Linux.
-- ChatGPT desktop: remove `readndraft` from the client's MCP settings.
-- Claude Code: run:
+Use the client-native plugin uninstall command. The plugin-provided MCP and
+skill disappear together. If this installation was upgraded from 0.3.x and the
+one-time migration has not been run, run `migrate-plugin` first so no old direct
+MCP entry remains. Remove a ChatGPT desktop entry separately in that client's
+MCP settings.
 
-  ```console
-  claude mcp remove readndraft --scope user
-  ```
+Fully close the client afterward so active MCP leases can end and a
+launcher-owned broker can exit after its idle timeout.
 
-Fully close the clients after removing their entries so active MCP leases can
-end and a launcher-owned broker can exit after its idle timeout.
-
-### 2. Remove managed Agent Skills
-
-Use only the clients that were installed:
-
-```console
-uvx readndraft-imap-mcp@latest skill uninstall codex
-uvx readndraft-imap-mcp@latest skill uninstall readndraft-update codex
-uvx readndraft-imap-mcp@latest skill uninstall claude-code
-uvx readndraft-imap-mcp@latest skill uninstall readndraft-update claude-code
-```
-
-The installer refuses to remove a user-modified or unmanaged skill. Inspect it
-manually rather than deleting it blindly.
-
-### 3. Remove accounts and OS credentials
+### 2. Remove accounts and OS credentials
 
 Skip this step when retaining accounts for a later reinstall. For a complete
 removal, list accounts and delete each alias through the interactive command:
@@ -385,7 +300,7 @@ password or app password from Windows Credential Manager or the Linux Secret
 Service keyring. Do this before manually deleting application state; otherwise
 the account metadata needed to identify a stored credential may be lost.
 
-### 4. Optionally remove remaining local data
+### 3. Optionally remove remaining local data
 
 Run `uvx readndraft-imap-mcp@latest doctor` to display the private state path and
 `uvx readndraft-imap-mcp@latest attachments path` to display the fixed attachment

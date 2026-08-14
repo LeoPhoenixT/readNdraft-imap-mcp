@@ -3,12 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_readme_documents_uvx_setup_security_and_support() -> None:
+def test_readme_documents_plugin_setup_security_and_support() -> None:
     text = Path("README.md").read_text(encoding="utf-8")
     for required in (
-        "uvx readndraft-imap-mcp@latest setup",
-        "uvx readndraft-imap-mcp doctor --online",
-        "~/.agents/skills",
+        "uvx readndraft-imap-mcp@0.4.0 setup",
+        "codex plugin add readndraft@readndraft",
+        "/plugin install readndraft@readndraft",
+        "migrate-plugin --client codex",
         "cannot send, submit, or delete",
         "Batch-read plain text for up to 10 selected messages",
         "## Authorization boundary",
@@ -24,6 +25,7 @@ def test_readme_documents_uvx_setup_security_and_support() -> None:
     ):
         assert required in text
     assert "uvx readndraft-imap-mcp approve" not in text
+    assert "[mcp_servers.readndraft]" not in text
 
 
 def test_security_document_explains_inbound_and_outbound_html_policies() -> None:

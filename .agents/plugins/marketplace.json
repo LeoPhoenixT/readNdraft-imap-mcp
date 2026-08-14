@@ -1,0 +1,20 @@
+{
+  "name": "readndraft",
+  "interface": {
+    "displayName": "readNdraft"
+  },
+  "plugins": [
+    {
+      "name": "readndraft",
+      "source": {
+        "source": "local",
+        "path": "./plugins/readndraft"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "readndraft",
+  "version": "0.4.0",
+  "description": "Safely read, organize, and draft IMAP email without sending mail.",
+  "author": {
+    "name": "LeoPhoenixT",
+    "url": "https://github.com/LeoPhoenixT"
+  },
+  "homepage": "https://github.com/LeoPhoenixT/readNdraft-imap-mcp",
+  "repository": "https://github.com/LeoPhoenixT/readNdraft-imap-mcp",
+  "license": "Apache-2.0"
+}

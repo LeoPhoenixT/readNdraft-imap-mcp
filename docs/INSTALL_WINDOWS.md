@@ -20,17 +20,13 @@ the repository or install readNdraft permanently.
 ## Guided setup
 
 ```powershell
-uvx readndraft-imap-mcp@latest setup --client codex --install-skill
+uvx readndraft-imap-mcp@0.4.0 setup
 ```
 
-Use `chatgpt-desktop` or `claude-code` for another client. The wizard checks
-Windows Credential Manager, reads the IMAP password through a hidden prompt,
-tests IMAP before saving the account, prints a secret-free version-pinned client
-configuration, and installs the packaged Agent Skills.
-
-For Codex, copy the printed `[mcp_servers.readndraft]` table into
-`%USERPROFILE%\.codex\config.toml`. For Claude Code, follow the
-[Claude Code guide](CLIENT_CLAUDE.md) to add the printed JSON at user scope.
+The wizard checks Windows Credential Manager, reads the IMAP password through a
+hidden prompt, and tests IMAP before saving the account. It does not edit Codex
+or Claude configuration. Install the native marketplace plugin using the
+[Codex](CLIENT_CODEX.md) or [Claude Code](CLIENT_CLAUDE.md) guide.
 
 ## Verify
 
