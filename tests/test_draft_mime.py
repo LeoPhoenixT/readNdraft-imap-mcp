@@ -11,7 +11,12 @@ from readndraft_imap_mcp.mime.drafts import (
     build_draft_message,
     prepare_draft,
 )
-from readndraft_imap_mcp.mime.html import prepare_html
+from readndraft_imap_mcp.mime.html import (
+    AUTHORED_POLICY,
+    INBOUND_POLICY,
+    prepare_html,
+    sanitize_inbound_html,
+)
 
 
 def test_generated_draft_preserves_client_editable_fields_and_attachment(tmp_path) -> None:
@@ -157,16 +162,108 @@ def test_draft_inlines_safe_email_css_and_preserves_layout() -> None:
     assert "text-align:center" in prepared
 
 
+def test_authored_html_preserves_permissive_email_layout_css() -> None:
+    html = (
+        '<p style="margin:0;line-height:1.15">one</p>'
+        '<div style="padding:1.5pt 2.25pt;background-color:#eee;text-align:right">two</div>'
+        '<table style="width:100%;border:solid black 1.0pt"><tr>'
+        '<td style="padding:1.5pt 2.25pt">cell</td></tr></table>'
+    )
+    prepared = prepare_html(html, maximum_bytes=100_000)
+    for expected in (
+        "margin:0", "line-height:1.15", "padding:1.5pt 2.25pt",
+        "border:solid black 1.0pt", "background-color:#eee",
+        "text-align:right", "width:100%",
+    ):
+        assert expected in prepared
+
+
+def test_bordered_table_and_zero_margin_paragraphs_round_trip_through_read_policy() -> None:
+    draft = prepare_draft(
+        to=("to@example.com",), subject="layout", body="one\ntwo",
+        html_body=(
+            '<p style="margin:0;line-height:1.15">one</p>'
+            '<p style="margin:0">two</p>'
+            '<table style="border:solid black 1.0pt"><tr><td style="padding:2pt">x</td></tr></table>'
+        ),
+    )
+    raw, _ = build_draft_message("owner@example.com", draft)
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+    html_part = next(part for part in message.walk() if part.get_content_type() == "text/html")
+    read_back = sanitize_inbound_html(html_part.get_content(), maximum_bytes=100_000)
+    assert "margin:0" in read_back
+    assert "line-height:1.15" in read_back
+    assert "border:solid black 1.0pt" in read_back
+    assert "padding:2pt" in read_back
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        "background:url(http://x)", "background:image-set(url(http://x) 1x)",
+        "display:none", "visibility:hidden", "opacity:0", "font-size:0px",
+        "text-indent:-100px", "position:fixed", "position:absolute",
+        "z-index:99", "transform:scale(2)", "content:'hidden'",
+        "width:expression(1)", "behavior:url(x)", "color:javascript:red",
+        "background:data:text/plain,x", r"color:r\65 d", "color:red\nblue",
+        "color:'red;blue'", "color:'<red>'",
+    ],
+)
+def test_authored_html_rejects_remote_hidden_escape_and_parser_values(style: str) -> None:
+    with pytest.raises(ValueError):
+        prepare_html(f'<p style="{style}">x</p>', maximum_bytes=100_000)
+
+
+def test_authored_stylesheet_rejects_import() -> None:
+    with pytest.raises(ValueError):
+        prepare_html("<style>@import 'https://x';</style><p>x</p>", maximum_bytes=100_000)
+
+
+def test_inbound_policy_remains_strict_and_cannot_use_authored_policy() -> None:
+    assert INBOUND_POLICY is not AUTHORED_POLICY
+    authored = prepare_html('<p style="animation:pulse 1s;margin:0">x</p>', maximum_bytes=100_000)
+    inbound = sanitize_inbound_html(
+        '<p style="animation:pulse 1s;position:fixed;z-index:9;transform:scale(2);content:x">x</p>'
+        '<img src="https://x"><link href="https://x" srcset="https://x">',
+        maximum_bytes=100_000,
+    )
+    assert "animation:pulse 1s" in authored
+    for unsafe in ("animation", "position", "z-index", "transform", "content", "https://x", "srcset"):
+        assert unsafe not in inbound
+
+
+def test_inbound_html_removes_every_remote_resource_surface() -> None:
+    html = """
+      <style>@import url(https://x); p { background:url(https://x); }</style>
+      <p style="background-image:url(https://x);list-style-image:url(https://x);
+        border-image:url(https://x);cursor:url(https://x);mask:url(https://x);
+        background:image-set(url(https://x) 1x)">text</p>
+      <img src="https://x" srcset="https://x 1x"><link href="https://x">
+      <object data="https://x"></object><iframe src="https://x"></iframe>
+      <video src="https://x"></video><audio src="https://x"></audio>
+    """
+    result = sanitize_inbound_html(html, maximum_bytes=100_000)
+    for marker in ("https://x", "url(", "@import", "image-set", "src=", "srcset"):
+        assert marker not in result
+
+
+def test_empty_paragraphs_are_preserved_in_every_position_for_both_policies() -> None:
+    html = "<p></p><p>&nbsp;</p><p>text</p><p></p><p>&nbsp;</p>"
+    authored = prepare_html(html, maximum_bytes=100_000)
+    inbound = sanitize_inbound_html(html, maximum_bytes=100_000)
+    for result in (authored, inbound):
+        assert result.count("<p></p>") == 2
+        assert result.count("<p>&nbsp;</p>") == 2
+
+
 @pytest.mark.parametrize(
     "css",
     [
         "p { background-color: red; background-image: url(https://tracker.example/x); }",
         "p { border: url(https://tracker.example/x); }",
         "@import url(https://tracker.example/x); p { color: red; }",
-        "p { color: var(--secret); }",
         "p { position: fixed; z-index: 999; }",
         "p { display: none; }",
-        "p { animation: pulse 1s; }",
     ],
 )
 def test_draft_rejects_unsafe_or_unsupported_css(css: str) -> None:

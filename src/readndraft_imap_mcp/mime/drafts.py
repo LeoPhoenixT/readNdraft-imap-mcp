@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from email import policy
 from email.message import EmailMessage
 from email.utils import formatdate, getaddresses, make_msgid
-from .html import prepare_html
+from .html import prepare_authored_html
 from .parser import MAX_MESSAGE_BYTES
 
 MAX_RECIPIENTS = 100
@@ -60,7 +60,7 @@ def prepare_draft(
     if len(body.encode("utf-8")) > MAX_TEXT_BODY_BYTES:
         raise ValueError("draft body exceeds the 2 MB limit")
     if html_body is not None:
-        html_body = prepare_html(html_body, maximum_bytes=MAX_HTML_BODY_BYTES)
+        html_body = prepare_authored_html(html_body, maximum_bytes=MAX_HTML_BODY_BYTES)
     if len(attachments) > MAX_ATTACHMENTS:
         raise ValueError("draft exceeds the 25 attachment limit")
     if len({item.filename for item in attachments}) != len(attachments):

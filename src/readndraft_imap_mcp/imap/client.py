@@ -4,6 +4,7 @@ import imaplib
 import base64
 import re
 import ssl
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from email import policy
 from email.parser import BytesParser
@@ -372,6 +373,82 @@ class ImapClient:
         )
         if headers.get("Message-ID") != record.message_id:
             raise ImapClientError("draft Message-ID no longer matches provenance")
+
+    def _search_draft_uids(self, record: DraftProvenance) -> tuple[str, ...]:
+        current_uid_validity = self._select(record.mailbox, readonly=False)
+        if current_uid_validity != record.uid_validity:
+            raise ImapClientError("UIDVALIDITY changed; draft cannot be repaired")
+        data = _expect_ok(
+            self.imap.uid("SEARCH", None, "HEADER", "Message-ID", record.message_id),
+            "UID SEARCH draft Message-ID",
+        )
+        values = b" ".join(item for item in data if isinstance(item, bytes)).split()
+        return tuple(value.decode("ascii", errors="strict") for value in values)
+
+    def resolve_draft_uid(self, record: DraftProvenance) -> tuple[str, ...]:
+        """Return the tracked UID, or exact Message-ID matches when it is stale."""
+        try:
+            self._verify_draft(record)
+        except ImapClientError:
+            return self._search_draft_uids(record)
+        assert record.uid is not None
+        return (record.uid,)
+
+    def append_draft_update(
+        self,
+        record: DraftProvenance,
+        raw_message: bytes,
+        message_id: str,
+        attachment_hashes: tuple[str, ...],
+    ) -> DraftUpdateResult:
+        if record.account_id != self.account.account_id:
+            raise PermissionError("draft provenance belongs to another account")
+        if not raw_message or len(raw_message) > MAX_MESSAGE_BYTES:
+            raise ValueError("generated draft must contain at most 50 MB")
+        if "UIDPLUS" not in self._capabilities():
+            raise ImapClientError("crash-safe draft update requires UIDPLUS")
+        destination = self.discover_drafts_mailbox()
+        if destination.name != record.mailbox:
+            raise ImapClientError("tracked draft mailbox is no longer the SPECIAL-USE mailbox")
+        self._verify_draft(record)
+        appended = self.append_draft(raw_message, message_id, attachment_hashes)
+        if appended.uid_validity is None or appended.uid is None:
+            raise ImapClientError("UIDPLUS server omitted APPENDUID; original draft retained")
+        if appended.uid_validity != record.uid_validity:
+            raise ImapClientError("replacement draft UIDVALIDITY differs; original draft retained")
+        return DraftUpdateResult(
+            account_id=self.account.account_id,
+            draft_id=record.draft_id,
+            mailbox=appended.mailbox,
+            uid_validity=appended.uid_validity,
+            uid=appended.uid,
+            message_id=message_id,
+            attachment_hashes=attachment_hashes,
+            method="uidplus",
+        )
+
+    def expunge_superseded_draft(self, record: DraftProvenance, uid: str) -> None:
+        """Expunge only a UID recorded as part of this tracked draft update."""
+        candidate = replace(record, uid=uid)
+        try:
+            self._verify_draft(candidate)
+        except ImapClientError:
+            matches = self._search_draft_uids(candidate)
+            if uid not in matches:
+                return
+            raise
+        try:
+            _expect_ok(
+                self.imap.uid("STORE", uid, "+FLAGS.SILENT", r"(\Deleted)"),
+                "UID STORE old draft deleted",
+            )
+            _expect_ok(self.imap.uid("EXPUNGE", uid), "UID EXPUNGE old draft")
+        except Exception:
+            try:
+                self.imap.uid("STORE", uid, "-FLAGS.SILENT", r"(\Deleted)")
+            except Exception:
+                pass
+            raise
 
     def replace_draft(
         self,

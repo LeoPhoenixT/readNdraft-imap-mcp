@@ -17,6 +17,7 @@ from multiprocessing.connection import AuthenticationError, Client, Listener
 from pathlib import Path
 from typing import Any
 
+from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.broker.service import BrokerService
 from readndraft_imap_mcp.broker.limits import RequestQuotaError
 from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
@@ -46,6 +47,7 @@ MAX_FRAME_BYTES = 8 * 1024 * 1024
 ALLOWED_OPERATIONS = frozenset(
     {
         "health",
+        "shutdown",
         "frontend_lease",
         "list_accounts",
         "list_mailboxes",
@@ -68,6 +70,7 @@ ALLOWED_OPERATIONS = frozenset(
 )
 _PARAMETERS = {
     "health": (frozenset(), frozenset()),
+    "shutdown": (frozenset(), frozenset()),
     "frontend_lease": (frozenset(), frozenset()),
     "list_accounts": (frozenset(), frozenset()),
     "list_mailboxes": (frozenset({"account_id"}), frozenset()),
@@ -167,7 +170,8 @@ def _request_frame(operation: str, params: dict[str, Any]) -> dict[str, Any]:
     return {"request_id": secrets.token_hex(16), "operation": operation, "params": params}
 
 
-def _decode_request(raw: bytes) -> dict[str, Any]:
+def _decode_envelope(raw: bytes) -> dict[str, Any]:
+    """Validate the transport envelope only. Never inspects params."""
     if len(raw) > MAX_FRAME_BYTES:
         raise ValueError("RPC request exceeds frame limit")
     try:
@@ -181,6 +185,10 @@ def _decode_request(raw: bytes) -> dict[str, Any]:
         char not in "0123456789abcdef" for char in request_id
     ):
         raise ValueError("invalid RPC request_id")
+    return value
+
+
+def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
     if value["operation"] not in ALLOWED_OPERATIONS or not isinstance(value["params"], dict):
         raise ValueError("operation is not allowed")
     required, optional = _PARAMETERS[value["operation"]]
@@ -189,6 +197,10 @@ def _decode_request(raw: bytes) -> dict[str, Any]:
         raise ValueError("invalid RPC parameters")
     _validate_parameter_types(value["operation"], value["params"])
     return value
+
+
+def _decode_request(raw: bytes) -> dict[str, Any]:
+    return _validate_request(_decode_envelope(raw))
 
 
 def _string(value: object, *, maximum: int = 4096) -> bool:
@@ -314,7 +326,15 @@ class BrokerRpcServer:
                 "ok": True,
                 "status": "healthy",
                 "protocol_version": IPC_PROTOCOL_VERSION,
+                "package_version": __version__,
             }
+        if operation == "shutdown":
+            threading.Thread(
+                target=self._graceful_shutdown,
+                daemon=True,
+                name="readndraft-shutdown",
+            ).start()
+            return {"shutdown": True}
         if operation == "list_accounts":
             return self.broker.list_accounts()
         if operation == "list_mailboxes":
@@ -430,11 +450,17 @@ class BrokerRpcServer:
             ]
         raise ValueError("operation is not allowed")
 
+    def _graceful_shutdown(self) -> None:
+        if self._shutdown.wait(self.shutdown_grace_seconds):
+            return
+        self.request_shutdown()
+
     def handle_frame(self, raw: bytes) -> bytes:
         request_id = None
         try:
-            request = _decode_request(raw)
+            request = _decode_envelope(raw)
             request_id = request["request_id"]
+            _validate_request(request)
             result = asyncio.run(self.dispatch(request["operation"], request["params"]))
             return _encode({"request_id": request_id, "ok": True, "result": result})
         except Exception as exc:
@@ -559,6 +585,14 @@ class IpcBrokerClient:
             connection.send_bytes(_encode(request))
             response = json.loads(connection.recv_bytes(MAX_FRAME_BYTES).decode("utf-8"))
         if response.get("request_id") != request["request_id"]:
+            if response.get("ok") is False and response.get("request_id") is None:
+                # Broker rejected the frame before it could echo the id; the
+                # real error is more useful than a correlation complaint.
+                error = response.get("error", {})
+                raise RpcError(
+                    str(error.get("message", "broker request failed")),
+                    code=str(error.get("type", "broker_error")),
+                )
             raise RpcError("broker response request_id mismatch")
         if response.get("ok") is not True:
             error = response.get("error", {})
@@ -577,6 +611,9 @@ class IpcBrokerClient:
     def health(self) -> dict[str, object]:
         return self._request_sync("health", {})
 
+    def shutdown(self) -> None:
+        self._request_sync("shutdown", {})
+
     @contextmanager
     def frontend_lease(self) -> Iterator[None]:
         request = _request_frame("frontend_lease", {})
@@ -587,6 +624,14 @@ class IpcBrokerClient:
                 connection.recv_bytes(MAX_FRAME_BYTES).decode("utf-8")
             )
             if response.get("request_id") != request["request_id"]:
+                if response.get("ok") is False and response.get("request_id") is None:
+                    # Broker rejected the frame before it could echo the id; the
+                    # real error is more useful than a correlation complaint.
+                    error = response.get("error", {})
+                    raise RpcError(
+                        str(error.get("message", "broker request failed")),
+                        code=str(error.get("type", "broker_error")),
+                    )
                 raise RpcError("broker response request_id mismatch")
             if response.get("ok") is not True or response.get("result") != {
                 "leased": True

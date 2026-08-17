@@ -441,6 +441,7 @@ def main(argv: list[str] | None = None) -> int:
                 suffix = f"; already completed: {completed}" if completed else ""
                 raise RuntimeError(f"{client} update failed{suffix}: {exc}") from exc
         _print_status(results, args.json)
+        print("Retire a surviving broker with: readndraft-imap-mcp broker stop")
         print("Fully restart each updated client before using readNdraft again.")
         return 0
     except (OSError, RuntimeError, ValueError) as exc:

@@ -28,7 +28,7 @@ fails closed in that situation and does not store a plaintext fallback.
 ## Guided setup
 
 ```console
-uvx readndraft-imap-mcp@0.4.0 setup
+uvx readndraft-imap-mcp@0.4.1 setup
 ```
 
 The wizard verifies the credential backend, reads the IMAP password through a

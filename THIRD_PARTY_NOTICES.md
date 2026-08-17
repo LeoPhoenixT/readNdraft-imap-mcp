@@ -7,7 +7,7 @@ its own license and includes its authoritative license material in its upstream
 distribution.
 
 This inventory reflects the runtime dependency graph locked for readNdraft
-0.4.0. Platform markers mean that an individual installation contains only the
+0.4.1. Platform markers mean that an individual installation contains only the
 packages applicable to that operating system.
 
 | Package | Version | License | Platform |
