@@ -13,6 +13,7 @@ from readndraft_imap_mcp.mime.drafts import (
 )
 from readndraft_imap_mcp.mime.html import (
     AUTHORED_POLICY,
+    AuthoredHtmlError,
     INBOUND_POLICY,
     prepare_html,
     sanitize_inbound_html,
@@ -254,6 +255,119 @@ def test_empty_paragraphs_are_preserved_in_every_position_for_both_policies() ->
     for result in (authored, inbound):
         assert result.count("<p></p>") == 2
         assert result.count("<p>&nbsp;</p>") == 2
+
+
+def test_inbound_html_round_trips_into_authored_draft() -> None:
+    inbound = sanitize_inbound_html(
+        '<div><p>hi <a href="https://example.com/a">link</a></p></div>',
+        maximum_bytes=2 * 1024 * 1024,
+    )
+    assert "rel=" in inbound
+    prepare_html(inbound, maximum_bytes=2 * 1024 * 1024)
+
+
+def test_authored_rel_value_is_replaced_by_the_server_value() -> None:
+    out = prepare_html(
+        '<p><a href="https://x.com/" rel="dns-prefetch">x</a></p>',
+        maximum_bytes=2 * 1024 * 1024,
+    )
+    assert "dns-prefetch" not in out
+    assert out.count('rel="noopener noreferrer"') == 1
+
+
+def test_authored_error_names_the_offending_attribute() -> None:
+    with pytest.raises(AuthoredHtmlError, match="ping"):
+        prepare_html(
+            '<p><a href="https://x.com/" ping="x">y</a></p>',
+            maximum_bytes=2 * 1024 * 1024,
+        )
+
+
+def test_authored_error_detail_is_bounded_and_scrubbed() -> None:
+    with pytest.raises(AuthoredHtmlError) as exc:
+        prepare_html("<p><evil tag>x</evil tag></p>", maximum_bytes=2 * 1024 * 1024)
+    assert len(str(exc.value)) <= 200
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        '<p><a href="tel:+85231455524">call</a></p>',
+        '<p style="font-family:Arial,\n sans-serif">x</p>',
+        '<p dir="rtl" lang="he">sh</p>',
+        '<p><font face="Arial" size="2" color="#333">x</font></p>',
+        '<p><ruby>K<rt>k</rt></ruby></p>',
+        '<p><del>a</del><ins>b</ins><mark>m</mark><abbr>A</abbr><q>q</q><cite>c</cite></p>',
+        '<figure><figcaption>c</figcaption></figure>',
+        '<p><bdi>a</bdi><bdo dir="rtl">b</bdo>c<wbr>d</p>',
+        '<p><a href="https://x.com/" target="_self">x</a></p>',
+        '<p><a name="top">x</a></p>',
+        '<table><tr><td headers="h1" abbr="s">x</td></tr></table>',
+    ],
+)
+def test_inert_constructs_are_accepted(html: str) -> None:
+    prepare_html(html, maximum_bytes=2 * 1024 * 1024)
+
+
+def test_dir_and_lang_survive_to_output() -> None:
+    out = prepare_html('<p dir="rtl" lang="he">sh</p>', maximum_bytes=2 * 1024 * 1024)
+    assert 'dir="rtl"' in out and 'lang="he"' in out
+
+
+def test_bad_dir_value_is_dropped_not_raised() -> None:
+    out = prepare_html('<p dir="../../etc">x</p>', maximum_bytes=2 * 1024 * 1024)
+    assert "../../etc" not in out
+
+
+def test_inbound_keeps_line_wrapped_styles() -> None:
+    out = sanitize_inbound_html(
+        '<p style="color:red;\n font-size:9pt">x</p>',
+        maximum_bytes=2 * 1024 * 1024,
+    )
+    assert "color:red" in out
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        '<p style="display:none">x</p>',
+        '<p style="visibility:hidden">x</p>',
+        '<p style="opacity:0.01">x</p>',
+        '<p style="font-size:0">x</p>',
+        '<p style="position:fixed">x</p>',
+        '<p style="text-indent:-9999px">x</p>',
+        '<p style="background:url(https://x/y.png)">x</p>',
+        '<style>@import url(https://x/y.css);</style><p>x</p>',
+        '<p style="background-image:data:image/png;base64,AA">x</p>',
+        '<p><img src="https://x/y.png"></p>',
+        '<p><script>alert(1)</script></p>',
+        '<p><iframe src="https://x/"></iframe></p>',
+        '<form><input name="a"></form>',
+        '<p onclick="x()">y</p>',
+        '<p><a href="javascript:alert(1)">x</a></p>',
+        '<p><a href="data:text/html,x">x</a></p>',
+        '<p><a href="https://x.com/" ping="https://e/">x</a></p>',
+        '<p rel="noopener">x</p>',
+        '<p style="color:red;expression(1)">x</p>',
+        '<p style="background:url (https://x/y.png)">x</p>',
+        '<p style="background:url\n(https://x/y.png)">x</p>',
+    ],
+)
+def test_authored_html_threat_model_is_still_rejected(html: str) -> None:
+    with pytest.raises(ValueError):
+        prepare_html(html, maximum_bytes=2 * 1024 * 1024)
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        '<p style="font-family:Arial,\n sans-serif">x</p>',
+        '<p style="color:red;\n font-size:9pt">x</p>',
+        '<p style="border:solid black\n 1.0pt">x</p>',
+    ],
+)
+def test_line_wrapped_values_are_accepted(html: str) -> None:
+    prepare_html(html, maximum_bytes=2 * 1024 * 1024)
 
 
 @pytest.mark.parametrize(

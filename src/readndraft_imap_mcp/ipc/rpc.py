@@ -41,6 +41,7 @@ from readndraft_imap_mcp.imap.models import (
     SearchTargetError,
     SearchTarget,
 )
+from readndraft_imap_mcp.mime.html import AuthoredHtmlError
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
 MAX_FRAME_BYTES = 8 * 1024 * 1024
@@ -140,6 +141,8 @@ def _safe_error(exc: Exception) -> tuple[str, str]:
         return "permission_denied", "request denied"
     if isinstance(exc, KeyError):
         return "not_found", "requested resource was not found"
+    if isinstance(exc, AuthoredHtmlError):
+        return "invalid_request", str(exc)
     if isinstance(exc, (ValueError, RpcError)):
         return "invalid_request", "request rejected"
     if isinstance(exc, TimeoutError):
