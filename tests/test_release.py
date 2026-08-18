@@ -20,18 +20,45 @@ def test_release_accepts_approved_license() -> None:
     assert _RELEASE_CHECK.errors_for("v0.4.1") == []
 
 
-def test_release_workflow_separates_build_and_oidc_publish() -> None:
+def test_release_workflow_uses_version_merge_sha_and_separates_publish() -> None:
     text = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    assert "needs: [test]" in text
-    assert "needs: [build]" in text
+    assert "branches: [main]" in text
+    assert "- pyproject.toml" in text
+    assert 'tags:\n      - "v[0-9]+' not in text
+    assert "BEFORE_SHA: ${{ github.event.before }}" in text
+    assert "RELEASE_SHA: ${{ github.sha }}" in text
+    assert "current != previous" in text
+    assert "ref: ${{ needs.prepare.outputs.sha }}" in text
+    assert "git tag -a \"${RELEASE_TAG}\" \"${RELEASE_SHA}\"" in text
+    assert "git rev-list -n 1 \"${RELEASE_TAG}\"" in text
+    assert "needs: [prepare, test]" in text
+    assert "needs: [prepare, build, tag]" in text
     assert text.count("id-token: write") == 1
     assert "uv publish --trusted-publishing always" in text
-    assert "needs: [publish]" in text
+    assert "needs: [prepare, publish]" in text
     assert "contents: write" in text
     assert "gh release create" in text
+    assert "--verify-tag" in text
     assert "GH_REPO: ${{ github.repository }}" in text
     assert "--generate-notes" in text
     assert "persist-credentials: false" in text
+    assert "scripts/validate_plugin_versions.py" in text
+
+
+def test_testpypi_workflow_requires_exact_candidate_sha() -> None:
+    text = Path(".github/workflows/test-release.yml").read_text(encoding="utf-8")
+    assert "release_sha:" in text
+    assert "Exact 40-character commit SHA to test and publish" in text
+    assert "Validate immutable candidate SHA" in text
+    assert '[[ ! "${RELEASE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]]' in text
+    assert 'echo "sha=${RELEASE_SHA,,}" >> "${GITHUB_OUTPUT}"' in text
+    assert text.count("ref: ${{ needs.prepare.outputs.sha }}") == 2
+    assert "ref: ${{ inputs.release_sha }}" not in text
+    assert "ref: ${{ github.event.repository.default_branch }}" not in text
+    assert "needs: [prepare, test]" in text
+    assert "needs: [prepare, build]" in text
+    assert "scripts/validate_plugin_versions.py" in text
+    assert "testpypi-dist-${{ needs.prepare.outputs.sha }}" in text
 
 
 def test_built_distributions_contain_unified_cli_and_skills(tmp_path) -> None:
@@ -80,4 +107,3 @@ def test_installed_dependency_license_policy_passes() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stderr
-
