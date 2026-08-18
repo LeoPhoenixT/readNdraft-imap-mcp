@@ -84,5 +84,28 @@ behavior changes.
   fallback, same-account, ordinary-mailbox, confirmation, and audit restrictions.
 - Wait for all GitHub Actions checks to pass before merging.
 
+## Releases
+
+Prepare a focused release PR that synchronizes the intended version across the
+Python package, lockfile, plugin manifests, marketplace metadata, MCP runtime
+pin, documentation, and release tests. Merging that PR is the final manual
+production-release step.
+
+A push to `main` that changes `pyproject.toml` compares the project version at
+the push's `before` SHA with the version at the immutable pushed commit SHA. If
+the version did not change, the release workflow exits without publishing. If it
+did change, the workflow tests and builds that exact commit, verifies all plugin
+versions agree, creates the matching annotated `vX.Y.Z` tag on that exact SHA,
+publishes the built artifacts to PyPI through trusted publishing, and creates
+the GitHub Release. A later merge to `main` cannot change the release target.
+
+The tag step is retry-safe: an existing tag is accepted only when it resolves to
+the captured release SHA; a conflicting tag fails the release instead of moving
+it. Do not manually create the normal production tag after merging a release PR.
+
+For TestPyPI, dispatch `test-release.yml` with both the candidate `release_tag`
+and the exact `release_sha`. All candidate tests and builds use that SHA instead
+of whatever the default branch points to when individual jobs start.
+
 By contributing, you agree that your contribution is licensed under the
 [Apache License 2.0](LICENSE).
