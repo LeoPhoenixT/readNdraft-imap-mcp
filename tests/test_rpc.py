@@ -15,7 +15,8 @@ from readndraft_imap_mcp.imap.models import (
     MessageIdentity,
     MoveResult,
 )
-from readndraft_imap_mcp.ipc.rpc import BrokerRpcServer, _decode_request, _encode
+from readndraft_imap_mcp.ipc.rpc import BrokerRpcServer, _decode_request, _encode, _safe_error
+from readndraft_imap_mcp.mime.html import AuthoredHtmlError
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
 
@@ -31,6 +32,18 @@ def _frame(operation: str, params: dict) -> bytes:
             "operation": operation,
             "params": params,
         }
+    )
+
+
+def test_safe_error_passes_through_authored_html_detail() -> None:
+    code, message = _safe_error(AuthoredHtmlError("unsupported draft HTML attribute: ping"))
+    assert code == "invalid_request" and "ping" in message
+
+
+def test_safe_error_still_redacts_plain_value_error() -> None:
+    assert _safe_error(ValueError("/home/user/secret/path")) == (
+        "invalid_request",
+        "request rejected",
     )
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 def test_readme_documents_plugin_setup_security_and_support() -> None:
     text = Path("README.md").read_text(encoding="utf-8")
     for required in (
-        "uvx readndraft-imap-mcp@0.4.1 setup",
+        "uvx readndraft-imap-mcp@0.5.0 setup",
         "codex plugin add readndraft@readndraft",
         "/plugin install readndraft@readndraft",
         "migrate-plugin --client codex",

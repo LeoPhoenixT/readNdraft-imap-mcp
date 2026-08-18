@@ -18,6 +18,8 @@ Search and mutation errors use safe categories: `timeout`, `rate_limited`,
 `imap_error`, `connection_error`, `not_found`, `permission_denied`, or
 `invalid_request`; moves may also return `partial_move`. Report the affected raw mailbox and keep other results. Do
 not invent a mailbox-count limit: a call accepts at most 20 unique targets.
+For draft writes, `invalid_request` includes safe detail naming the rejected HTML
+tag, attribute, or CSS property; report that detail so the draft can be corrected.
 
 For a partially failed batch, do not replay the original batch: successful
 items are not rolled back. Present only failures the user still wants retried
