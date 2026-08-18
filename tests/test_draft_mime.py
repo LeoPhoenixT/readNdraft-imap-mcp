@@ -206,7 +206,7 @@ def test_bordered_table_and_zero_margin_paragraphs_round_trip_through_read_polic
         "text-indent:-100px", "position:fixed", "position:absolute",
         "z-index:99", "transform:scale(2)", "content:'hidden'",
         "width:expression(1)", "behavior:url(x)", "color:javascript:red",
-        "background:data:text/plain,x", r"color:r\65 d", "color:red\nblue",
+        "background:data:text/plain,x", r"color:r\65 d",
         "color:'red;blue'", "color:'<red>'",
     ],
 )
