@@ -48,11 +48,17 @@ def test_release_workflow_uses_version_merge_sha_and_separates_publish() -> None
 def test_testpypi_workflow_requires_exact_candidate_sha() -> None:
     text = Path(".github/workflows/test-release.yml").read_text(encoding="utf-8")
     assert "release_sha:" in text
-    assert "Exact commit SHA to test and publish" in text
-    assert text.count("ref: ${{ inputs.release_sha }}") == 2
+    assert "Exact 40-character commit SHA to test and publish" in text
+    assert "Validate immutable candidate SHA" in text
+    assert '[[ ! "${RELEASE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]]' in text
+    assert 'echo "sha=${RELEASE_SHA,,}" >> "${GITHUB_OUTPUT}"' in text
+    assert text.count("ref: ${{ needs.prepare.outputs.sha }}") == 2
+    assert "ref: ${{ inputs.release_sha }}" not in text
     assert "ref: ${{ github.event.repository.default_branch }}" not in text
+    assert "needs: [prepare, test]" in text
+    assert "needs: [prepare, build]" in text
     assert "scripts/validate_plugin_versions.py" in text
-    assert "testpypi-dist-${{ inputs.release_sha }}" in text
+    assert "testpypi-dist-${{ needs.prepare.outputs.sha }}" in text
 
 
 def test_built_distributions_contain_unified_cli_and_skills(tmp_path) -> None:
