@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Version tag matching pyproject.toml (for example, v0.1.0)"
+        description: "Version tag matching pyproject.toml (for example, v0.4.2)"
+        required: true
+        type: string
+      release_sha:
+        description: "Exact commit SHA to test and publish"
         required: true
         type: string
 
@@ -20,10 +24,10 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.12", "3.13", "3.14"]
     steps:
-      - name: Check out default branch
+      - name: Check out candidate commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ inputs.release_sha }}
           persist-credentials: false
 
       - name: Install uv
@@ -39,7 +43,9 @@ jobs:
         run: uv sync --locked --extra dev
 
       - name: Verify release metadata and requested tag
-        run: uv run --locked python scripts/release_check.py --tag "${{ inputs.release_tag }}"
+        run: |
+          uv run --locked python scripts/release_check.py --tag "${{ inputs.release_tag }}"
+          uv run --locked python scripts/validate_plugin_versions.py
 
       - name: Run tests
         run: uv run --locked pytest
@@ -59,10 +65,10 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Check out default branch
+      - name: Check out candidate commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: ${{ inputs.release_sha }}
           persist-credentials: false
 
       - name: Install uv
@@ -83,7 +89,7 @@ jobs:
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: testpypi-dist
+          name: testpypi-dist-${{ inputs.release_sha }}
           path: dist/
 
   publish:
@@ -104,7 +110,7 @@ jobs:
       - name: Download distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: testpypi-dist
+          name: testpypi-dist-${{ inputs.release_sha }}
           path: dist/
 
       - name: Generate PEP 740 attestations
