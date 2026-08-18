@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal, TypeAlias
 
+from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
 
@@ -20,6 +21,7 @@ class HealthResponse:
     ok: Literal[True] = True
     status: Literal["healthy"] = "healthy"
     protocol_version: int = IPC_PROTOCOL_VERSION
+    package_version: str = __version__
 
     def to_dict(self) -> dict[str, str | bool | int]:
         return asdict(self)

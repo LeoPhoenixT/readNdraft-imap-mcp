@@ -5,13 +5,14 @@ import asyncio
 import os
 from importlib.metadata import PackageNotFoundError, version
 
+from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.admin import AccountFile
 from readndraft_imap_mcp.audit import JsonlAuditSink
 from readndraft_imap_mcp.credentials import KeyringCredentialStore
 from readndraft_imap_mcp.imap import ImapClient
 from readndraft_imap_mcp.poc.credentials import inspect_backend
 
-from .launcher import broker_healthy
+from .launcher import broker_health
 from .paths import current_app_paths
 
 
@@ -61,14 +62,19 @@ async def _doctor(online: bool) -> list[tuple[str, bool, str]]:
         checks.append(("audit chain", True, f"{events} events"))
     except (OSError, RuntimeError, ValueError) as exc:
         checks.append(("audit chain", False, str(exc)))
-    healthy = broker_healthy(paths)
-    checks.append(
-        (
-            "broker state",
-            True,
-            "healthy" if healthy else "not running (normal for on-demand mode)",
+    broker = broker_health(paths)
+    if broker is None:
+        checks.append(("broker state", True, "not running (normal for on-demand mode)"))
+    else:
+        frontend_version = __version__
+        broker_version = str(broker.get("package_version", "unknown"))
+        checks.append(
+            (
+                "broker state",
+                broker_version == frontend_version,
+                f"healthy; package {broker_version} (frontend {frontend_version})",
+            )
         )
-    )
     return checks
 
 

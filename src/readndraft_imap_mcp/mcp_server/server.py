@@ -340,7 +340,7 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
         uid_validity: str,
         uid: str,
     ) -> HtmlOutput:
-        """Read sanitized HTML without remote loading; prefer plain-text get_email."""
+        """Read strictly filtered HTML without remote loading; empty paragraphs are preserved."""
         message = await backend.get_email_html(
             _identity(account_id, mailbox, uid_validity, uid)
         )
@@ -377,7 +377,7 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
         html_body: str | None = None,
         attachment_names: list[str] | None = None,
     ) -> DraftCreationOutput:
-        """Save a draft; body is plain text and html_body is equivalent optional HTML. No send capability."""
+        """Save a draft; authored HTML permits normal mail layout CSS but rejects remote resources, hidden content, and message-box escapes. Empty paragraphs are preserved. No send capability."""
         result = await backend.create_draft(
             account_id,
             to=tuple(to),
@@ -404,7 +404,7 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
         html_body: str | None = None,
         attachment_names: list[str] | None = None,
     ) -> DraftUpdateOutput:
-        """Replace a draft; body is plain text and html_body is equivalent optional HTML. No send capability."""
+        """Replace a draft; authored HTML permits normal mail layout CSS but rejects remote resources, hidden content, and message-box escapes. Empty paragraphs are preserved. No send capability."""
         result = await backend.update_draft(
             account_id,
             draft_id,

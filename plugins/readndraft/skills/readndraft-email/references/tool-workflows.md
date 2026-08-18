@@ -67,11 +67,12 @@ with nothing important only in HTML. Modern mail clients normally display the
 HTML alternative while the required body remains the plain fallback. `html_body`
 may be a fragment or a complete HTML document. Supported HTML covers common
 modern email structure such as paragraphs, headings, emphasis, lists,
-blockquotes, safe links, and tables. Conservative presentation CSS is accepted,
-normalized, and inlined for mail-client compatibility. Do not add images,
-active content, event handlers, unsafe URLs, or invented remote assets;
-unsupported or unsafe markup and styles cause the draft request to be rejected,
-and no URL is fetched.
+blockquotes, safe links, and tables. Authored CSS is permissive, normalized, and
+inlined for mail-client compatibility. CSS that fetches remote resources, hides
+content, or escapes the message box rejects the whole request so formatting is
+never silently lost. Do not add images, active content, event handlers, unsafe
+URLs, or invented remote assets; no URL is fetched. Empty paragraphs are
+preserved consistently.
 To, Cc, and Bcc may all be empty; explicitly present that there are no
 recipients rather than inventing one
 or refusing the draft. The sender is pinned account metadata, not a draft

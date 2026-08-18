@@ -1,3 +1,3 @@
 """Version the local IPC contract and endpoint independently from the package."""
 
-IPC_PROTOCOL_VERSION = 7
+IPC_PROTOCOL_VERSION = 8

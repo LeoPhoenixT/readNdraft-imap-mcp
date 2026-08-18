@@ -13,7 +13,7 @@ from typing import Generic, TypeVar
 from readndraft_imap_mcp.audit import AuditEvent, AuditSink, AuditUnavailableError
 from readndraft_imap_mcp.attachments import AttachmentExchange, InputAttachment, SavedAttachment
 from readndraft_imap_mcp.credentials import CredentialStore
-from readndraft_imap_mcp.drafts import FileDraftStore
+from readndraft_imap_mcp.drafts import DraftProvenanceError, FileDraftStore
 from readndraft_imap_mcp.imap.client import (
     ImapClient,
     ImapClientError,
@@ -649,9 +649,47 @@ class BrokerService:
         )
         started = perf_counter()
         try:
+            matches = await self._client_call(
+                account_id,
+                lambda client: client.resolve_draft_uid(record),
+                response_timeout=False,
+            )
+            if matches != (record.uid,):
+                if len(matches) != 1:
+                    detail = "no matching message" if not matches else f"{len(matches)} matching messages"
+                    raise DraftProvenanceError(
+                        f"draft tracking record is stale ({detail}); run "
+                        f"readndraft-imap-mcp drafts repair --draft-id {draft_id}"
+                    )
+                record = self._drafts.update(
+                    record,
+                    mailbox=record.mailbox,
+                    uid_validity=record.uid_validity,
+                    uid=matches[0],
+                    message_id=record.message_id,
+                    attachment_hashes=record.attachment_hashes,
+                    superseded_uid=record.superseded_uid,
+                )
+            if record.superseded_uid is not None:
+                await self._client_call(
+                    account_id,
+                    lambda client: client.expunge_superseded_draft(
+                        record, record.superseded_uid or ""
+                    ),
+                    response_timeout=False,
+                )
+                record = self._drafts.update(
+                    record,
+                    mailbox=record.mailbox,
+                    uid_validity=record.uid_validity,
+                    uid=record.uid,
+                    message_id=record.message_id,
+                    attachment_hashes=record.attachment_hashes,
+                    superseded_uid=None,
+                )
             result = await self._client_call(
                 account_id,
-                lambda client: client.replace_draft(
+                lambda client: client.append_draft_update(
                     record,
                     raw,
                     message_id,
@@ -659,21 +697,22 @@ class BrokerService:
                 ),
                 response_timeout=False,
             )
-        except Exception as exc:
-            await self._audit.record(
-                AuditEvent.draft_update(
-                    account_id=account_id,
-                    mailbox=record.mailbox,
-                    uid=record.uid or "",
-                    request_size=len(raw),
-                    success=False,
-                    duration_ms=int((perf_counter() - started) * 1000),
-                    error_category=type(exc).__name__,
-                    client_id=client_id,
-                )
+            old_uid = record.uid
+            record = self._drafts.update(
+                record,
+                mailbox=result.mailbox,
+                uid_validity=result.uid_validity,
+                uid=result.uid,
+                message_id=result.message_id,
+                attachment_hashes=result.attachment_hashes,
+                superseded_uid=old_uid,
             )
-            raise
-        try:
+            assert old_uid is not None
+            await self._client_call(
+                account_id,
+                lambda client: client.expunge_superseded_draft(record, old_uid),
+                response_timeout=False,
+            )
             self._drafts.update(
                 record,
                 mailbox=result.mailbox,
@@ -681,13 +720,14 @@ class BrokerService:
                 uid=result.uid,
                 message_id=result.message_id,
                 attachment_hashes=result.attachment_hashes,
+                superseded_uid=None,
             )
         except Exception as exc:
             await self._audit.record(
                 AuditEvent.draft_update(
                     account_id=account_id,
-                    mailbox=result.mailbox,
-                    uid=result.uid or "",
+                    mailbox=record.mailbox,
+                    uid=record.uid or "",
                     request_size=len(raw),
                     success=False,
                     duration_ms=int((perf_counter() - started) * 1000),

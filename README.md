@@ -31,7 +31,7 @@ runs the published package in an isolated environment.
 Run guided setup in a real interactive terminal:
 
 ```console
-uvx readndraft-imap-mcp@0.4.0 setup
+uvx readndraft-imap-mcp@0.4.1 setup
 ```
 
 This configures only readNdraft's local account, credential, and private state.
@@ -77,7 +77,7 @@ For Claude Code, run these commands inside Claude Code:
 ```
 
 The plugin supplies one shared `readndraft-email` skill and a local stdio MCP
-definition pinned to `readndraft-imap-mcp@0.4.0`. It does not contain secrets,
+definition pinned to `readndraft-imap-mcp@0.4.1`. It does not contain secrets,
 account data, or a send capability.
 
 ### 4. Restart and verify
@@ -128,7 +128,8 @@ while uv downloads the pinned package. If a stored password has changed, run
   HTML-only messages are converted into a bounded, readable plain-text
   representation; `get_email_html` remains available for sanitized rich HTML.
 - Batch-read plain text for up to 10 selected messages across 2 accounts.
-- Read sanitized HTML without loading remote content.
+- Read strictly filtered HTML without loading remote content; remote-resource
+  elements, attributes, and CSS are removed, and empty paragraphs are preserved.
 - Save one selected, bounded attachment into a fixed private output directory and
   return its absolute native-platform path.
 - Star/unstar and mark read/unread without replacing unrelated flags.
@@ -145,9 +146,14 @@ while uv downloads the pinned package. If a stored password has changed, run
   `multipart/alternative`, with plain text first and HTML second, so modern mail
   clients normally display HTML while other clients retain a plain fallback.
   Rich input may be an HTML fragment or a complete HTML document. Supported
-  email-safe CSS is normalized and inlined for broad mail-client compatibility.
+  authored CSS is permissive and inlined for broad mail-client compatibility.
+  Draft requests are rejected when CSS could fetch remote resources, hide
+  content, or escape the message box; empty paragraphs are always preserved.
   To, Cc, and Bcc may all be empty when the user wants an unaddressed draft.
 - Update only a draft previously created by this MCP, after confirmation.
+- Inspect and repair local draft tracking with `drafts list` and `drafts repair`.
+  `drafts forget` removes only the local tracking record; it never deletes or
+  expunges the server message.
 
 It exposes no send, submission, ordinary-message deletion, raw IMAP, arbitrary
 flag, credential, or account-administration MCP tool. Updating a tracked draft
@@ -209,8 +215,8 @@ entry, and that entry can override the plugin. First run the one-time migration
 for the client you previously configured:
 
 ```console
-uvx readndraft-imap-mcp@0.4.0 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.4.0 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.4.1 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.4.1 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been

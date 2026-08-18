@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from readndraft_imap_mcp.broker.limits import RequestQuotaError
+from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
 from readndraft_imap_mcp.imap.models import (
     BatchMoveResult,
@@ -42,6 +43,7 @@ def test_rpc_health_and_account_list_are_json_only() -> None:
     assert health["ok"] is True
     assert health["result"]["status"] == "healthy"
     assert health["result"]["protocol_version"] == IPC_PROTOCOL_VERSION
+    assert health["result"]["package_version"] == __version__
     assert accounts["result"][0]["id"] == "personal"
 
 
@@ -99,7 +101,7 @@ def test_rpc_rejects_unknown_operation_before_dispatch() -> None:
     response = json.loads(BrokerRpcServer(FakeBroker(), "unused", b"x").handle_frame(raw))
 
     assert response["ok"] is False
-    assert response["request_id"] is None
+    assert response["request_id"] == "0" * 32
 
 
 def test_rpc_rejects_missing_and_extra_parameters() -> None:
@@ -108,6 +110,28 @@ def test_rpc_rejects_missing_and_extra_parameters() -> None:
         response = json.loads(BrokerRpcServer(FakeBroker(), "unused", b"x").handle_frame(raw))
         assert response["ok"] is False
         assert response["error"]["message"] == "request rejected"
+
+
+def test_rpc_parameter_rejection_echoes_valid_request_id() -> None:
+    request_id = "1" * 32
+    raw = _encode(
+        {
+            "request_id": request_id,
+            "operation": "list_mailboxes",
+            "params": {
+                "account_id": "personal",
+                "definitely_not_a_param": 1,
+            },
+        }
+    )
+
+    response = json.loads(
+        BrokerRpcServer(FakeBroker(), "unused", b"x").handle_frame(raw)
+    )
+
+    assert response["request_id"] == request_id
+    assert response["ok"] is False
+    assert response["error"]["type"] == "invalid_request"
 
 
 def test_rpc_rejects_type_confused_writes() -> None:

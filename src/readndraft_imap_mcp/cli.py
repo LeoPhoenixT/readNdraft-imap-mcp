@@ -14,9 +14,10 @@ Commands:
   update      check or apply version-pinned client and skill updates
   migrate-plugin remove a recognized legacy Codex/Claude installation
   attachments show or open the fixed attachment exchange directories
+  drafts      list, repair, or forget local draft tracking records
   audit       verify the integrity-chained local audit log
   mcp         run the on-demand broker and stdio MCP frontend
-  broker      run the broker directly for service-managed deployments
+  broker      run or stop the broker for service-managed deployments
 """
 
 
@@ -44,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
         from readndraft_imap_mcp.platform.plugin_migration import main as target
     elif command == "attachments":
         from readndraft_imap_mcp.attachments.cli import main as target
+    elif command == "drafts":
+        from readndraft_imap_mcp.drafts.cli import main as target
     elif command == "audit":
         from readndraft_imap_mcp.admin.cli import main as admin_main
         return admin_main(["audit", "verify", *rest])

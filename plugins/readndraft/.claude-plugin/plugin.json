@@ -1,6 +1,6 @@
 {
   "name": "readndraft",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Safely read, organize, and draft IMAP email without sending mail.",
   "author": {
     "name": "LeoPhoenixT",

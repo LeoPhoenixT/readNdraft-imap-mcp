@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
+from readndraft_imap_mcp import __version__
 
 from readndraft_imap_mcp.broker import (
     BrokerService,
@@ -18,6 +19,7 @@ def test_health_is_the_only_phase1_broker_operation() -> None:
         "ok": True,
         "status": "healthy",
         "protocol_version": IPC_PROTOCOL_VERSION,
+        "package_version": __version__,
     }
 
 

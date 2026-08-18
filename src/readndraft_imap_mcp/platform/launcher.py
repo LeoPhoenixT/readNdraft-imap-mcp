@@ -11,6 +11,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Callable
 
+from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.ipc import IpcBrokerClient
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
@@ -105,30 +106,39 @@ class StartupLock:
         self.close()
 
 
-def broker_healthy(paths: AppPaths, timeout: float = 1.0) -> bool:
-    """Perform a bounded authenticated health check without exposing errors."""
+def broker_health(paths: AppPaths, timeout: float = 1.0) -> dict[str, object] | None:
+    """Return a bounded authenticated broker health response, if available."""
 
     finished = threading.Event()
-    healthy = False
+    result: dict[str, object] | None = None
 
     def check() -> None:
-        nonlocal healthy
+        nonlocal result
         try:
             result = IpcBrokerClient(
                 paths.ipc_address, paths.load_or_create_ipc_key()
             ).health()
-            healthy = result == {
-                "ok": True,
-                "status": "healthy",
-                "protocol_version": IPC_PROTOCOL_VERSION,
-            }
         except Exception:
-            healthy = False
+            result = None
         finally:
             finished.set()
 
     threading.Thread(target=check, daemon=True, name="readndraft-health").start()
-    return finished.wait(timeout) and healthy
+    return result if finished.wait(timeout) else None
+
+
+def broker_healthy(paths: AppPaths, timeout: float = 1.0) -> bool:
+    """Perform a bounded authenticated health check without exposing errors."""
+    result = broker_health(paths, timeout)
+    return result is not None and all(
+        result.get(key) == value
+        for key, value in {
+            "ok": True,
+            "status": "healthy",
+            "protocol_version": IPC_PROTOCOL_VERSION,
+            "package_version": __version__,
+        }.items()
+    )
 
 
 def start_owned_broker(idle_timeout: float, shutdown_grace: float) -> subprocess.Popen:

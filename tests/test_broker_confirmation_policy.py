@@ -51,7 +51,10 @@ class Client:
             "personal", "Drafts", "42", "99", message_id, attachment_hashes
         )
 
-    def replace_draft(self, record, raw, message_id, attachment_hashes):
+    def resolve_draft_uid(self, record):
+        return (record.uid,)
+
+    def append_draft_update(self, record, raw, message_id, attachment_hashes):
         message = BytesParser(policy=policy.default).parsebytes(raw)
         self.draft_senders.append(message["From"])
         self.draft_messages.append(message)
@@ -65,6 +68,9 @@ class Client:
             attachment_hashes,
             "replace",
         )
+
+    def expunge_superseded_draft(self, record, uid):
+        return None
 
     def set_read_state(self, identity, read):
         return FlagChange(identity, "read", read, True, (), (r"\Seen",))

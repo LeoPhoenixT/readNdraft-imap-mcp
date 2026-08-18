@@ -24,6 +24,7 @@ class DraftProvenance:
     attachment_hashes: tuple[str, ...]
     created_at: str
     updated_at: str
+    superseded_uid: str | None = None
 
     def __post_init__(self) -> None:
         if len(self.draft_id) != 32 or any(
@@ -37,6 +38,10 @@ class DraftProvenance:
         for value, name in ((self.uid_validity, "UIDVALIDITY"), (self.uid, "UID")):
             if value is not None and (not value.isascii() or not value.isdigit()):
                 raise DraftProvenanceError(f"invalid {name}")
+        if self.superseded_uid is not None and (
+            not self.superseded_uid.isascii() or not self.superseded_uid.isdigit()
+        ):
+            raise DraftProvenanceError("invalid superseded UID")
         if any(
             len(value) != 64 or any(char not in "0123456789abcdef" for char in value)
             for value in self.attachment_hashes
@@ -66,7 +71,10 @@ class DraftProvenance:
             "attachment_hashes",
             "created_at",
             "updated_at",
+            "superseded_uid",
         }
+        if isinstance(value, dict) and "superseded_uid" not in value:
+            value = {**value, "superseded_uid": None}
         if set(value) != expected or not isinstance(value["attachment_hashes"], list):
             raise DraftProvenanceError("invalid draft provenance shape")
         try:
@@ -97,13 +105,22 @@ class FileDraftStore:
     def _write(self, record: DraftProvenance) -> None:
         path = self._path(record.draft_id)
         temporary = path.with_suffix(f".{secrets.token_hex(4)}.tmp")
-        temporary.write_text(
-            json.dumps(record.to_dict(), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        if os.name != "nt":
-            os.chmod(temporary, 0o600)
-        os.replace(temporary, path)
+        try:
+            with temporary.open("w", encoding="utf-8") as handle:
+                handle.write(json.dumps(record.to_dict(), indent=2, sort_keys=True) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            if os.name != "nt":
+                os.chmod(temporary, 0o600)
+            os.replace(temporary, path)
+            if os.name != "nt":
+                directory = os.open(self.directory, os.O_RDONLY)
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def create(
         self,
@@ -150,6 +167,7 @@ class FileDraftStore:
         uid: str | None,
         message_id: str,
         attachment_hashes: tuple[str, ...],
+        superseded_uid: str | None = None,
     ) -> DraftProvenance:
         with self._lock:
             stored = self.get(current.draft_id, current.account_id)
@@ -162,7 +180,26 @@ class FileDraftStore:
                 uid=uid,
                 message_id=message_id,
                 attachment_hashes=attachment_hashes,
+                superseded_uid=superseded_uid,
                 updated_at=datetime.now(UTC).isoformat(),
             )
             self._write(updated)
             return updated
+
+    def list(self) -> tuple[DraftProvenance, ...]:
+        records: list[DraftProvenance] = []
+        for path in sorted(self.directory.glob("*.json")):
+            try:
+                records.append(DraftProvenance.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+            except (OSError, json.JSONDecodeError, DraftProvenanceError) as exc:
+                raise DraftProvenanceError(f"invalid draft provenance file: {path.name}") from exc
+        return tuple(records)
+
+    def forget(self, draft_id: str) -> bool:
+        with self._lock:
+            path = self._path(draft_id)
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                return False
+            return True
