@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 from readndraft_imap_mcp.admin.accounts_file import AccountFile
 from readndraft_imap_mcp.attachments import AttachmentExchange
@@ -9,6 +10,7 @@ from readndraft_imap_mcp.credentials import KeyringCredentialStore
 from readndraft_imap_mcp.drafts import FileDraftStore
 from readndraft_imap_mcp.ipc import BrokerRpcServer, IpcBrokerClient
 from readndraft_imap_mcp.platform import current_app_paths
+from readndraft_imap_mcp.platform.launcher import StartupLock
 
 from .service import BrokerService
 
@@ -52,14 +54,20 @@ def main(argv: list[str] | None = None) -> int | None:
         parser.error("--idle-timeout must be positive")
     if args.shutdown_grace < 0:
         parser.error("--shutdown-grace must be non-negative")
-    broker, address, authkey = build_broker()
-    BrokerRpcServer(
-        broker,
-        address,
-        authkey,
-        idle_timeout_seconds=args.idle_timeout,
-        shutdown_grace_seconds=args.shutdown_grace,
-    ).serve_forever()
+    paths = current_app_paths()
+    paths.ensure_private()
+    with StartupLock(paths.broker_instance_lock_file) as instance_lock:
+        if not instance_lock.try_acquire():
+            print("Another readNdraft broker instance is already running.", file=sys.stderr)
+            return 1
+        broker, address, authkey = build_broker()
+        BrokerRpcServer(
+            broker,
+            address,
+            authkey,
+            idle_timeout_seconds=args.idle_timeout,
+            shutdown_grace_seconds=args.shutdown_grace,
+        ).serve_forever()
     return None
 
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1
+
+### Added
+
+- Added an audit repair command that archives an invalid audit log before a fresh
+  chain begins.
+
+### Fixed
+
+- Prevented concurrent broker instances and cross-process audit chain forks.
+- Retired version-mismatched brokers before launching upgraded versions.
+- Reported audit integrity failures with fork-aware diagnostics and recovery guidance.
+
 ## 0.5.0
 
 ### Added

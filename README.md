@@ -31,7 +31,7 @@ runs the published package in an isolated environment.
 Run guided setup in a real interactive terminal:
 
 ```console
-uvx readndraft-imap-mcp@0.5.0 setup
+uvx readndraft-imap-mcp@0.5.1 setup
 ```
 
 This configures only readNdraft's local account, credential, and private state.
@@ -77,7 +77,7 @@ For Claude Code, run these commands inside Claude Code:
 ```
 
 The plugin supplies one shared `readndraft-email` skill and a local stdio MCP
-definition pinned to `readndraft-imap-mcp@0.5.0`. It does not contain secrets,
+definition pinned to `readndraft-imap-mcp@0.5.1`. It does not contain secrets,
 account data, or a send capability.
 
 ### 4. Restart and verify
@@ -215,8 +215,8 @@ entry, and that entry can override the plugin. First run the one-time migration
 for the client you previously configured:
 
 ```console
-uvx readndraft-imap-mcp@0.5.0 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.5.0 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.5.1 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.5.1 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been
