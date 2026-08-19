@@ -12,6 +12,7 @@ from types import TracebackType
 from typing import Callable
 
 from readndraft_imap_mcp import __version__
+from readndraft_imap_mcp.audit import JsonlAuditSink
 from readndraft_imap_mcp.ipc import IpcBrokerClient
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
@@ -141,6 +142,21 @@ def broker_healthy(paths: AppPaths, timeout: float = 1.0) -> bool:
     )
 
 
+def retire_stale_broker(paths: AppPaths, timeout: float = 3.0) -> None:
+    result = broker_health(paths)
+    if result is None or result.get("package_version") == __version__:
+        return
+    try:
+        IpcBrokerClient(paths.ipc_address, paths.load_or_create_ipc_key()).shutdown()
+    except Exception:
+        return
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if broker_health(paths) is None:
+            return
+        time.sleep(0.1)
+
+
 def start_owned_broker(idle_timeout: float, shutdown_grace: float) -> subprocess.Popen:
     command = [
         sys.executable,
@@ -191,6 +207,7 @@ def ensure_broker(
             if lock.try_acquire():
                 if health_check(paths, min(1.0, max(0.1, deadline - time.monotonic()))):
                     return False
+                retire_stale_broker(paths)
                 starter(idle_timeout, shutdown_grace)
                 while time.monotonic() < deadline:
                     if health_check(
@@ -202,9 +219,13 @@ def ensure_broker(
             if health_check(paths, min(0.5, max(0.1, deadline - time.monotonic()))):
                 return False
             time.sleep(0.05)
+    hint = "Run readndraft-imap-mcp doctor for details."
+    try:
+        JsonlAuditSink(paths.audit_file).verify_sync()
+    except (OSError, RuntimeError, ValueError) as exc:
+        hint = f"Cause: {exc}. Run readndraft-imap-mcp audit repair, then reconnect."
     raise RuntimeError(
-        f"readNdraft broker could not start within {startup_timeout:g} seconds. "
-        "Run readndraft-admin account list, then account test <account_id>."
+        f"readNdraft broker could not start within {startup_timeout:g} seconds. {hint}"
     )
 
 

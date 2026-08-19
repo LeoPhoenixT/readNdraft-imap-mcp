@@ -6,6 +6,8 @@ import time
 
 import pytest
 
+import readndraft_imap_mcp.platform.launcher as launcher_module
+from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.platform.launcher import (
     StartupLock,
     ensure_broker,
@@ -105,7 +107,7 @@ def test_simultaneous_launchers_start_exactly_one_broker(tmp_path) -> None:
 
 def test_startup_failure_is_bounded_and_actionable(tmp_path) -> None:
     started = time.monotonic()
-    with pytest.raises(RuntimeError, match="account test <account_id>"):
+    with pytest.raises(RuntimeError, match="doctor for details"):
         ensure_broker(
             _paths(tmp_path),
             startup_timeout=0.15,
@@ -113,6 +115,56 @@ def test_startup_failure_is_bounded_and_actionable(tmp_path) -> None:
             starter=lambda idle, grace: object(),
         )
     assert time.monotonic() - started < 1
+
+
+def test_version_mismatched_broker_is_retired_before_start(monkeypatch, tmp_path) -> None:
+    running = True
+    shutdowns = []
+    starts = []
+
+    def health(paths):
+        if running:
+            return {"package_version": "0.0.1"}
+        return None
+
+    def shutdown(self):
+        nonlocal running
+        shutdowns.append(True)
+        running = False
+
+    monkeypatch.setattr(launcher_module, "broker_health", health)
+    monkeypatch.setattr(launcher_module.IpcBrokerClient, "shutdown", shutdown)
+
+    assert ensure_broker(
+        _paths(tmp_path),
+        health_check=lambda paths, timeout: bool(starts),
+        starter=lambda idle, grace: starts.append((idle, grace)),
+    ) is True
+    assert shutdowns == [True]
+    assert starts == [(300.0, 10.0)]
+
+
+def test_same_version_broker_is_not_retired(monkeypatch, tmp_path) -> None:
+    shutdowns = []
+    starts = []
+    monkeypatch.setattr(
+        launcher_module,
+        "broker_health",
+        lambda paths: {"package_version": __version__},
+    )
+    monkeypatch.setattr(
+        launcher_module.IpcBrokerClient,
+        "shutdown",
+        lambda self: shutdowns.append(True),
+    )
+
+    assert ensure_broker(
+        _paths(tmp_path),
+        health_check=lambda paths, timeout: True,
+        starter=lambda idle, grace: starts.append((idle, grace)),
+    ) is False
+    assert shutdowns == []
+    assert starts == []
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows process flags")

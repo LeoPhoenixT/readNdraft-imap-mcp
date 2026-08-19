@@ -42,6 +42,10 @@ class AppPaths:
         return self.runtime_dir / f"broker-v{IPC_PROTOCOL_VERSION}-startup.lock"
 
     @property
+    def broker_instance_lock_file(self) -> Path:
+        return self.runtime_dir / f"broker-v{IPC_PROTOCOL_VERSION}-instance.lock"
+
+    @property
     def draft_dir(self) -> Path:
         return self.state_dir / "drafts"
 
