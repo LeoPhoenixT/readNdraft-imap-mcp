@@ -41,6 +41,7 @@ class FakeBroker:
                 "port": 993,
                 "enabled": True,
                 "sender_address": "leo@example.com",
+                "sender_name": "Leo Phoenix",
             }
         ]
 
@@ -184,7 +185,8 @@ async def exercise_server() -> None:
         assert tools["list_accounts"].outputSchema["type"] == "object"
         account_schema = repr(tools["list_accounts"].outputSchema)
         for field in (
-            "id", "username", "host", "port", "enabled", "sender_address"
+            "id", "username", "host", "port", "enabled", "sender_address",
+            "sender_name",
         ):
             assert field in account_schema
         search_schema = repr(tools["search_emails"].outputSchema)
@@ -211,6 +213,7 @@ async def exercise_server() -> None:
                     "port": 993,
                     "enabled": True,
                     "sender_address": "leo@example.com",
+                    "sender_name": "Leo Phoenix",
                 }
             ]
         }

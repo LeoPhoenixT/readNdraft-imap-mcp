@@ -72,6 +72,13 @@ class AccountFile:
         )
         self._write(tuple(values[key] for key in sorted(values)))
 
+    def set_sender_name(self, account_id: str, sender_name: str | None) -> None:
+        values = {item.account_id: item for item in self.load()}
+        if account_id not in values:
+            raise KeyError("unknown account_id")
+        values[account_id] = replace(values[account_id], sender_name=sender_name)
+        self._write(tuple(values[key] for key in sorted(values)))
+
     def delete(self, account_id: str) -> None:
         values = {item.account_id: item for item in self.load()}
         if account_id not in values:

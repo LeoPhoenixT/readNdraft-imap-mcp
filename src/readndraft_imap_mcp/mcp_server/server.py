@@ -70,6 +70,7 @@ class AccountOutput(BaseModel):
     port: int
     enabled: bool
     sender_address: str | None = None
+    sender_name: str | None = None
 
 
 class MailboxOutput(BaseModel):

@@ -21,7 +21,13 @@ def _parser() -> argparse.ArgumentParser:
     actions = account.add_subparsers(dest="action", required=True)
     actions.add_parser("list")
     for name in (
-        "disable", "enable", "delete", "test", "rotate-secret", "clear-sender"
+        "disable",
+        "enable",
+        "delete",
+        "test",
+        "rotate-secret",
+        "clear-sender",
+        "clear-sender-name",
     ):
         item = actions.add_parser(name)
         item.add_argument("account_id")
@@ -32,9 +38,13 @@ def _parser() -> argparse.ArgumentParser:
     add.add_argument("--username", required=True)
     add.add_argument("--auth-method", choices=("login", "plain"), default="login")
     add.add_argument("--sender-address")
+    add.add_argument("--sender-name")
     sender = actions.add_parser("set-sender")
     sender.add_argument("account_id")
     sender.add_argument("sender_address")
+    sender_name = actions.add_parser("set-sender-name")
+    sender_name.add_argument("account_id")
+    sender_name.add_argument("sender_name")
     audit = commands.add_parser("audit")
     audit_actions = audit.add_subparsers(dest="action", required=True)
     audit_actions.add_parser("verify")
@@ -72,8 +82,16 @@ async def _run(args: argparse.Namespace) -> int:
         for item in accounts.registry().list_safe():
             print(
                 f"{item['id']}: {item['username']} at {item['host']}:{item['port']} "
-                f"sender={item['sender_address']} enabled={item['enabled']}"
+                f"sender={item['sender_address']} sender_name={item['sender_name']!r} "
+                f"enabled={item['enabled']}"
             )
+        return 0
+    if args.action in {"set-sender-name", "clear-sender-name"}:
+        sender_name = args.sender_name if args.action == "set-sender-name" else None
+        accounts.set_sender_name(args.account_id, sender_name)
+        print(
+            "Sender display name saved; active brokers reload configuration on the next request."
+        )
         return 0
     if args.action in {"set-sender", "clear-sender"}:
         sender_address = (
@@ -121,6 +139,7 @@ async def _run(args: argparse.Namespace) -> int:
         args.username,
         args.auth_method,
         sender_address=args.sender_address,
+        sender_name=args.sender_name,
     )
     secret = getpass.getpass("IMAP password/app password (hidden): ")
     if not secret:

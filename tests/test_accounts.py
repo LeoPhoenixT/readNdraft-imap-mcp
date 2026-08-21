@@ -36,6 +36,7 @@ def test_account_registry_returns_only_safe_pinned_metadata() -> None:
             "port": 993,
             "enabled": True,
             "sender_address": "leo@example.com",
+            "sender_name": None,
         }
     ]
     assert "secret" not in repr(registry.list_safe()).casefold()
@@ -69,6 +70,33 @@ def test_account_sender_address_is_optional_validated_metadata() -> None:
             AccountConfig(
                 "work", "imap.example.com", 993, "login", sender_address=invalid
             )
+
+
+@pytest.mark.parametrize("sender_name", ["Display Name", "山田太郎", "Mary Jane Smith"])
+def test_account_sender_name_is_normalized_and_exposed(sender_name: str) -> None:
+    account = AccountConfig(
+        "work", "imap.example.com", 993, "login@example.com",
+        sender_name=f"  {sender_name}  ",
+    )
+    assert account.sender_name == sender_name
+    assert account.safe_metadata()["sender_name"] == sender_name
+
+
+@pytest.mark.parametrize("sender_name", [None, "", "   "])
+def test_account_sender_name_blank_is_none(sender_name: str | None) -> None:
+    assert AccountConfig(
+        "work", "imap.example.com", 993, "login@example.com",
+        sender_name=sender_name,
+    ).sender_name is None
+
+
+@pytest.mark.parametrize("sender_name", ["Name\rBcc: x@example.com", "Name\nBcc: x@example.com"])
+def test_account_sender_name_rejects_line_breaks(sender_name: str) -> None:
+    with pytest.raises(ValueError, match="sender_name"):
+        AccountConfig(
+            "work", "imap.example.com", 993, "login@example.com",
+            sender_name=sender_name,
+        )
 
 
 def test_disabled_and_unknown_accounts_fail_closed() -> None:
