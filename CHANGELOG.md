@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- Added configurable sender display names for generated draft `From` headers.
+- Preserved optional recipient display names in draft `To`, `Cc`, and `Bcc`
+  headers.
+- Added reply drafts with broker-derived `In-Reply-To` and `References`
+  metadata from an exact source-message identity.
+
+### Changed
+
+- Persisted reply threading metadata across MCP-managed draft updates while
+  retaining compatibility with existing draft tracking records.
+- Advanced the authenticated local broker IPC contract to version 9.
+
 ## 0.5.1
 
 ### Added
