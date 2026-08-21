@@ -69,6 +69,7 @@ class ReadOnlyBroker(Protocol):
         body: str,
         html_body: str | None = None,
         attachment_names: tuple[str, ...] = (),
+        reply_to_message: MessageIdentity | None = None,
         client_id: str | None = None,
     ) -> DraftCreationResult: ...
 

@@ -72,6 +72,34 @@ def test_generated_draft_allows_no_recipients() -> None:
     message = BytesParser(policy=policy.default).parsebytes(raw)
 
     assert str(message["To"]) == ""
+
+
+def test_named_recipients_are_preserved_as_mailboxes() -> None:
+    draft = prepare_draft(
+        to=("\"Dr: Ada\" <ada@example.com>", "山田太郎 <taro@example.jp>"),
+        cc=("cc@example.com",), bcc=("Private <bcc@example.com>",),
+        subject="Hello", body="Body",
+    )
+    raw, _ = build_draft_message("owner@example.com", draft)
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+    assert [item.addr_spec for item in message["To"].addresses] == ["ada@example.com", "taro@example.jp"]
+    assert message["To"].addresses[0].display_name == "Dr: Ada"
+    assert message["To"].addresses[1].display_name == "山田太郎"
+    assert message["Bcc"].addresses[0].display_name == "Private"
+
+
+@pytest.mark.parametrize("value", ["a@example.com, b@example.com", "Team: a@example.com;", "<@old-route:a@example.com>", "a@example.com\r\nBcc: x@example.com"])
+def test_recipient_entry_must_contain_exactly_one_safe_mailbox(value: str) -> None:
+    with pytest.raises(ValueError, match="invalid To address|line breaks"):
+        prepare_draft(to=(value,), subject="Hello", body="Body")
+
+
+def test_reply_headers_are_emitted() -> None:
+    draft = prepare_draft(to=("reader@example.com",), subject="Hello", body="Body", in_reply_to="<source@example.com>", references=("<root@example.com>", "<source@example.com>"))
+    raw, _ = build_draft_message("owner@example.com", draft)
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+    assert str(message["In-Reply-To"]) == "<source@example.com>"
+    assert str(message["References"]) == "<root@example.com> <source@example.com>"
     assert message["Cc"] is None
     assert message["Bcc"] is None
 

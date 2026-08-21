@@ -93,7 +93,7 @@ _PARAMETERS = {
     ),
     "create_draft": (
         frozenset({"account_id", "to", "subject", "body"}),
-        frozenset({"cc", "bcc", "html_body", "attachment_names", "client_id"}),
+        frozenset({"cc", "bcc", "html_body", "attachment_names", "reply_to_message", "client_id"}),
     ),
     "update_draft": (
         frozenset({"account_id", "draft_id", "to", "subject", "body"}),
@@ -246,6 +246,8 @@ def _validate_parameter_types(operation: str, params: dict[str, Any]) -> None:
             raise ValueError("invalid RPC parameter type")
         if "attachment_names" in params and not _string_list(params["attachment_names"], maximum=25):
             raise ValueError("invalid RPC parameter type")
+    if operation == "create_draft" and "reply_to_message" in params:
+        _identity(params["reply_to_message"])
     if "client_id" in params and params["client_id"] is not None and not _string(params["client_id"], maximum=256):
         raise ValueError("invalid RPC parameter type")
 
@@ -407,6 +409,8 @@ class BrokerRpcServer:
                 "client_id": params.get("client_id"),
             }
             if operation == "create_draft":
+                if "reply_to_message" in params:
+                    kwargs["reply_to_message"] = _identity(params["reply_to_message"])
                 return asdict(await self.broker.create_draft(params["account_id"], **kwargs))
             return asdict(await self.broker.update_draft(params["account_id"], params["draft_id"], **kwargs))
         if operation in {"set_star", "set_read_state"}:
@@ -787,7 +791,11 @@ class IpcBrokerClient:
 
 
 def _json_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
-    return {key: list(value) if isinstance(value, tuple) else value for key, value in kwargs.items()}
+    return {
+        key: (list(value) if isinstance(value, tuple) else asdict(value) if isinstance(value, MessageIdentity) else value)
+        for key, value in kwargs.items()
+        if key != "reply_to_message" or value is not None
+    }
 
 
 def _flag_change(item: dict[str, Any]) -> FlagChange:

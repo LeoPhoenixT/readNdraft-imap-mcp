@@ -720,6 +720,26 @@ class ImapClient:
             source_size=len(raw),
         )
 
+    def get_threading_headers(self, identity: MessageIdentity) -> tuple[str, str | None]:
+        """Read only reply-thread headers without marking the source read."""
+        if identity.account_id != self.account.account_id:
+            raise PermissionError("message identity belongs to another account")
+        if self._select(identity.mailbox) != identity.uid_validity:
+            raise ImapClientError("UIDVALIDITY changed; message must be resolved again")
+        data = _expect_ok(
+            self.imap.uid("FETCH", identity.uid, "(UID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID REFERENCES)])"),
+            "UID FETCH threading headers",
+        )
+        head = _metadata_head(data)
+        if _parse_number(head, _UID_RE, "uid") != identity.uid:
+            raise ImapClientError("UID FETCH returned a different message")
+        message = BytesParser(policy=policy.default).parsebytes(_first_payload(data), headersonly=True)
+        message_id = message.get("Message-ID")
+        if not isinstance(message_id, str):
+            raise ValueError("source message has no Message-ID")
+        references = message.get("References")
+        return message_id, references if isinstance(references, str) else None
+
     def get_html(self, identity: MessageIdentity) -> HtmlContent:
         raw, flags = self._fetch_message(identity)
         return HtmlContent(

@@ -25,6 +25,8 @@ class DraftProvenance:
     created_at: str
     updated_at: str
     superseded_uid: str | None = None
+    in_reply_to: str | None = None
+    references: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if len(self.draft_id) != 32 or any(
@@ -47,6 +49,8 @@ class DraftProvenance:
             for value in self.attachment_hashes
         ):
             raise DraftProvenanceError("invalid attachment hash")
+        if (self.in_reply_to is None) != (not self.references):
+            raise DraftProvenanceError("invalid draft threading metadata")
 
     @property
     def update_supported(self) -> bool:
@@ -55,6 +59,7 @@ class DraftProvenance:
     def to_dict(self) -> dict:
         value = asdict(self)
         value["attachment_hashes"] = list(self.attachment_hashes)
+        value["references"] = list(self.references)
         return value
 
     @classmethod
@@ -71,14 +76,14 @@ class DraftProvenance:
             "attachment_hashes",
             "created_at",
             "updated_at",
-            "superseded_uid",
+            "superseded_uid", "in_reply_to", "references",
         }
-        if isinstance(value, dict) and "superseded_uid" not in value:
-            value = {**value, "superseded_uid": None}
-        if set(value) != expected or not isinstance(value["attachment_hashes"], list):
+        if isinstance(value, dict):
+            value = {**value, "superseded_uid": value.get("superseded_uid"), "in_reply_to": value.get("in_reply_to"), "references": value.get("references", [])}
+        if set(value) != expected or not isinstance(value["attachment_hashes"], list) or not isinstance(value["references"], list):
             raise DraftProvenanceError("invalid draft provenance shape")
         try:
-            return cls(**{**value, "attachment_hashes": tuple(value["attachment_hashes"])})
+            return cls(**{**value, "attachment_hashes": tuple(value["attachment_hashes"]), "references": tuple(value["references"])})
         except TypeError as exc:
             raise DraftProvenanceError("invalid draft provenance values") from exc
 
@@ -131,6 +136,8 @@ class FileDraftStore:
         uid: str | None,
         message_id: str,
         attachment_hashes: tuple[str, ...],
+        in_reply_to: str | None = None,
+        references: tuple[str, ...] = (),
     ) -> DraftProvenance:
         now = datetime.now(UTC).isoformat()
         record = DraftProvenance(
@@ -143,6 +150,8 @@ class FileDraftStore:
             attachment_hashes=attachment_hashes,
             created_at=now,
             updated_at=now,
+            in_reply_to=in_reply_to,
+            references=references,
         )
         with self._lock:
             self._write(record)

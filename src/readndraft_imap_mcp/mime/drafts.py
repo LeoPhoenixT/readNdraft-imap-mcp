@@ -25,22 +25,49 @@ class DraftAttachment:
 
 @dataclass(frozen=True, slots=True)
 class PreparedDraft:
-    to: tuple[str, ...]
-    cc: tuple[str, ...]
-    bcc: tuple[str, ...]
+    to: tuple[Address, ...]
+    cc: tuple[Address, ...]
+    bcc: tuple[Address, ...]
     subject: str
     body: str
     attachments: tuple[DraftAttachment, ...]
     html_body: str | None = None
+    in_reply_to: str | None = None
+    references: tuple[str, ...] = ()
 
 
-def _validate_addresses(values: tuple[str, ...], field: str) -> tuple[str, ...]:
+def _validate_addresses(values: tuple[str, ...], field: str) -> tuple[Address, ...]:
     if any("\r" in value or "\n" in value for value in values):
         raise ValueError(f"{field} addresses must not contain line breaks")
-    parsed = getaddresses(values)
-    if len(parsed) != len(values) or any(not address or "@" not in address for _, address in parsed):
-        raise ValueError(f"invalid {field} address")
-    return tuple(address for _, address in parsed)
+    addresses: list[Address] = []
+    for value in values:
+        # getaddresses deliberately expands lists/groups. One API entry must map
+        # to one mailbox so callers cannot bypass the recipient limit.
+        in_quote = False
+        escaped = False
+        group_syntax = False
+        for char in value:
+            if escaped:
+                escaped = False
+            elif char == "\\" and in_quote:
+                escaped = True
+            elif char == '"':
+                in_quote = not in_quote
+            elif not in_quote and char in ":;":
+                group_syntax = True
+        if group_syntax or "<@" in value:
+            raise ValueError(f"invalid {field} address")
+        parsed = getaddresses([value], strict=True)
+        if len(parsed) != 1:
+            raise ValueError(f"invalid {field} address")
+        name, addr_spec = parsed[0]
+        if not addr_spec or addr_spec.count("@") != 1 or ":" in addr_spec.split("@", 1)[0]:
+            raise ValueError(f"invalid {field} address")
+        try:
+            addresses.append(Address(display_name=name, addr_spec=addr_spec))
+        except ValueError as exc:
+            raise ValueError(f"invalid {field} address") from exc
+    return tuple(addresses)
 
 
 def prepare_draft(
@@ -52,6 +79,8 @@ def prepare_draft(
     body: str,
     attachments: tuple[DraftAttachment, ...] = (),
     html_body: str | None = None,
+    in_reply_to: str | None = None,
+    references: tuple[str, ...] = (),
 ) -> PreparedDraft:
     recipients = len(to) + len(cc) + len(bcc)
     if recipients > MAX_RECIPIENTS:
@@ -76,6 +105,8 @@ def prepare_draft(
         body=body,
         attachments=attachments,
         html_body=html_body,
+        in_reply_to=in_reply_to,
+        references=references,
     )
 
 
@@ -88,15 +119,18 @@ def build_draft_message(
 ) -> tuple[bytes, str]:
     message = EmailMessage(policy=policy.SMTP)
     message["From"] = Address(display_name=sender_name or "", addr_spec=from_address)
-    message["To"] = ", ".join(draft.to)
+    message["To"] = draft.to if draft.to else ""
     if draft.cc:
-        message["Cc"] = ", ".join(draft.cc)
+        message["Cc"] = draft.cc
     if draft.bcc:
-        message["Bcc"] = ", ".join(draft.bcc)
+        message["Bcc"] = draft.bcc
     message["Subject"] = draft.subject
     message["Date"] = formatdate(localtime=True)
     message_id = message_id or make_msgid(domain=from_address.partition("@")[2] or None)
     message["Message-ID"] = message_id
+    if draft.in_reply_to is not None:
+        message["In-Reply-To"] = draft.in_reply_to
+        message["References"] = " ".join(draft.references)
     message.set_content(draft.body)
     if draft.html_body is not None:
         message.add_alternative(draft.html_body, subtype="html")

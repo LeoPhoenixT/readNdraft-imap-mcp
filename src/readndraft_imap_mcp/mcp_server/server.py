@@ -377,10 +377,10 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
         bcc: list[str] | None = None,
         html_body: str | None = None,
         attachment_names: list[str] | None = None,
+        reply_to_message: IdentityOutput | None = None,
     ) -> DraftCreationOutput:
         """Save a draft; authored HTML permits normal mail layout CSS but rejects remote resources, hidden content, and message-box escapes. Empty paragraphs are preserved. No send capability."""
-        result = await backend.create_draft(
-            account_id,
+        kwargs = dict(
             to=tuple(to),
             cc=tuple(cc or ()),
             bcc=tuple(bcc or ()),
@@ -389,6 +389,17 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
             html_body=html_body,
             attachment_names=tuple(attachment_names or ()),
             client_id=str(ctx.client_id) if ctx.client_id is not None else None,
+        )
+        if reply_to_message is not None:
+            kwargs["reply_to_message"] = _identity(
+                reply_to_message.account_id,
+                reply_to_message.mailbox,
+                reply_to_message.uid_validity,
+                reply_to_message.uid,
+            )
+        result = await backend.create_draft(
+            account_id,
+            **kwargs,
         )
         return DraftCreationOutput.model_validate(asdict(result))
 
