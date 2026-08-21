@@ -170,11 +170,13 @@ The setup wizard is recommended. Individual human-only commands are also
 available:
 
 ```console
-uvx readndraft-imap-mcp account add work --host imap.example.com --username login@imap.example.com --sender-address leo@example.com
+uvx readndraft-imap-mcp account add work --host imap.example.com --username login@imap.example.com --sender-address user@example.com --sender-name "Display Name"
 uvx readndraft-imap-mcp account test work
 uvx readndraft-imap-mcp account list
 uvx readndraft-imap-mcp account set-sender work leo@example.com
 uvx readndraft-imap-mcp account clear-sender work
+uvx readndraft-imap-mcp account set-sender-name work "Display Name"
+uvx readndraft-imap-mcp account clear-sender-name work
 uvx readndraft-imap-mcp account rotate-secret work
 uvx readndraft-imap-mcp account disable work
 uvx readndraft-imap-mcp account enable work
@@ -182,11 +184,15 @@ uvx readndraft-imap-mcp account delete work
 ```
 
 Passwords are accepted only through a hidden local prompt. Account configuration
-and credential operations are not MCP tools. `sender_address` controls the visible
-`From` header of drafts and may differ from the IMAP login username. If omitted or
-cleared, it falls back to the username. MCP `list_accounts` exposes the effective
-sender so an agent can confirm it, but MCP cannot change it or override it per
-draft.
+and credential operations are not MCP tools. `username` is the IMAP login identity;
+`sender_address` is the bare email address placed in the draft's `From` header and
+may differ from that username. If omitted or cleared, the address falls back to the
+username. `sender_name` is an optional display name, producing a header such as
+`From: "Display Name" <user@example.com>`; clearing it restores address-only
+behavior. MCP `list_accounts` exposes both effective sender settings so an agent can
+confirm them, but MCP cannot change or override them per draft. Downstream SMTP
+servers, mailing lists, and other mail systems may rewrite headers after the draft
+leaves the client; the MCP controls only the MIME draft it creates.
 
 ## Configure ChatGPT desktop
 

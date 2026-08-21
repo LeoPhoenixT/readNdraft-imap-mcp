@@ -180,7 +180,7 @@ class BrokerService:
         decode_request(payload)
         return HealthResponse().to_dict()
 
-    def list_accounts(self) -> list[dict[str, str | int | bool]]:
+    def list_accounts(self) -> list[dict[str, str | int | bool | None]]:
         return self._current_accounts().list_safe()
 
     def _current_accounts(self) -> AccountRegistry:
@@ -546,7 +546,9 @@ class BrokerService:
             html_body=html_body,
             attachments=prepared_attachments,
         )
-        raw, message_id = build_draft_message(account.effective_sender_address, draft)
+        raw, message_id = build_draft_message(
+            account.effective_sender_address, draft, sender_name=account.sender_name
+        )
         started = perf_counter()
         try:
             result = await self._client_call(
@@ -645,6 +647,7 @@ class BrokerService:
         raw, message_id = build_draft_message(
             account.effective_sender_address,
             draft,
+            sender_name=account.sender_name,
             message_id=record.message_id,
         )
         started = perf_counter()

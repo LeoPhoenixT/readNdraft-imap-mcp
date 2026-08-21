@@ -11,6 +11,25 @@ from readndraft_imap_mcp.mime.drafts import (
     build_draft_message,
     prepare_draft,
 )
+
+
+@pytest.mark.parametrize("sender_name", ["Display Name", "山田太郎"])
+def test_sender_display_name_uses_structured_from_header(sender_name: str) -> None:
+    draft = prepare_draft(to=("reader@example.com",), subject="Hello", body="Body")
+    raw, _ = build_draft_message(
+        "user@example.com", draft, sender_name=sender_name
+    )
+    parsed = BytesParser(policy=policy.default).parsebytes(raw)
+    assert parsed["From"].addresses[0].display_name == sender_name
+    assert parsed["From"].addresses[0].addr_spec == "user@example.com"
+
+
+def test_sender_without_display_name_remains_address_only() -> None:
+    draft = prepare_draft(to=("reader@example.com",), subject="Hello", body="Body")
+    raw, _ = build_draft_message("user@example.com", draft)
+    parsed = BytesParser(policy=policy.default).parsebytes(raw)
+    assert parsed["From"].addresses[0].display_name == ""
+    assert parsed["From"].addresses[0].addr_spec == "user@example.com"
 from readndraft_imap_mcp.mime.html import (
     AUTHORED_POLICY,
     AuthoredHtmlError,

@@ -21,7 +21,8 @@ paste it into chat or add it to an environment variable.
 
 ## A draft shows the IMAP login as its sender
 
-Configure the account's visible address with `account set-sender ALIAS ADDRESS`.
+Configure the account's visible address with `account set-sender ALIAS ADDRESS` and
+its optional display name with `account set-sender-name ALIAS NAME`.
 Use `account list` to verify the effective sender. Authentication continues to
 use the original IMAP username; `account clear-sender ALIAS` restores that
 username as the draft sender fallback.

@@ -20,6 +20,7 @@ class AccountConfig:
     tls_mode: Literal["implicit"] = "implicit"
     enabled: bool = True
     sender_address: str | None = None
+    sender_name: str | None = None
 
     def __post_init__(self) -> None:
         if not _ACCOUNT_ID_RE.fullmatch(self.account_id):
@@ -41,12 +42,17 @@ class AccountConfig:
                 or not parsed_sender.domain
             ):
                 raise ValueError("invalid sender_address")
+        if self.sender_name is not None:
+            if "\r" in self.sender_name or "\n" in self.sender_name:
+                raise ValueError("invalid sender_name")
+            normalized_sender_name = self.sender_name.strip()
+            object.__setattr__(self, "sender_name", normalized_sender_name or None)
 
     @property
     def effective_sender_address(self) -> str:
         return self.sender_address or self.username
 
-    def safe_metadata(self) -> dict[str, str | int | bool]:
+    def safe_metadata(self) -> dict[str, str | int | bool | None]:
         local, separator, domain = self.username.partition("@")
         masked = f"{local[:1]}***@{domain}" if separator else "***"
         return {
@@ -56,6 +62,7 @@ class AccountConfig:
             "port": self.port,
             "enabled": self.enabled,
             "sender_address": self.effective_sender_address,
+            "sender_name": self.sender_name,
         }
 
 
@@ -69,7 +76,7 @@ class AccountRegistry:
             raise ValueError("account_id values must be unique")
         self._accounts: Mapping[str, AccountConfig] = MappingProxyType(indexed)
 
-    def list_safe(self) -> list[dict[str, str | int | bool]]:
+    def list_safe(self) -> list[dict[str, str | int | bool | None]]:
         return [
             self._accounts[key].safe_metadata()
             for key in sorted(self._accounts)

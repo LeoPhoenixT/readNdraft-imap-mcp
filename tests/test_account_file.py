@@ -49,6 +49,12 @@ def test_account_file_sender_is_optional_and_can_be_changed(tmp_path) -> None:
     accounts.set_sender_address("work", None)
     assert accounts.load()[0].effective_sender_address == "login@internal"
 
+    accounts.set_sender_name("work", "  山田太郎  ")
+    assert accounts.load()[0].sender_name == "山田太郎"
+    assert json.loads(accounts.path.read_text(encoding="utf-8"))[0]["sender_name"] == "山田太郎"
+    accounts.set_sender_name("work", " ")
+    assert accounts.load()[0].sender_name is None
+
 
 def test_account_file_rejects_unknown_fields(tmp_path) -> None:
     path = (tmp_path / "accounts.json").resolve()

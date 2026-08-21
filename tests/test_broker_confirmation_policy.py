@@ -84,7 +84,9 @@ class Audit:
         self.events.append(event)
 
 
-def build_broker(tmp_path, audit=None, *, sender_address=None) -> BrokerService:
+def build_broker(
+    tmp_path, audit=None, *, sender_address=None, sender_name=None
+) -> BrokerService:
     return BrokerService(
         AccountRegistry(
             [
@@ -94,6 +96,7 @@ def build_broker(tmp_path, audit=None, *, sender_address=None) -> BrokerService:
                     993,
                     "login@internal.example",
                     sender_address=sender_address,
+                    sender_name=sender_name,
                 )
             ]
         ),
@@ -187,6 +190,31 @@ def test_drafts_use_pinned_sender_for_create_and_update(tmp_path) -> None:
         )
     )
     assert Client.draft_senders == ["leo@example.com", "leo@example.com"]
+
+
+def test_drafts_use_pinned_sender_name_for_create_and_update(tmp_path) -> None:
+    Client.draft_messages = []
+    broker = build_broker(
+        tmp_path,
+        Audit(),
+        sender_address="user@example.com",
+        sender_name="山田太郎",
+    )
+    created = asyncio.run(
+        broker.create_draft(
+            "personal", to=("recipient@example.com",), subject="one", body="body"
+        )
+    )
+    asyncio.run(
+        broker.update_draft(
+            "personal", created.draft_id, to=("recipient@example.com",),
+            subject="two", body="body",
+        )
+    )
+    for message in Client.draft_messages:
+        sender = message["From"].addresses[0]
+        assert sender.display_name == "山田太郎"
+        assert sender.addr_spec == "user@example.com"
 
 
 def test_large_mutation_batch_has_no_runtime_approval(tmp_path) -> None:

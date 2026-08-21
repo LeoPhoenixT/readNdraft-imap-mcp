@@ -3,6 +3,7 @@ from __future__ import annotations
 import mimetypes
 from dataclasses import dataclass
 from email import policy
+from email.headerregistry import Address
 from email.message import EmailMessage
 from email.utils import formatdate, getaddresses, make_msgid
 from .html import prepare_authored_html
@@ -82,10 +83,11 @@ def build_draft_message(
     from_address: str,
     draft: PreparedDraft,
     *,
+    sender_name: str | None = None,
     message_id: str | None = None,
 ) -> tuple[bytes, str]:
     message = EmailMessage(policy=policy.SMTP)
-    message["From"] = from_address
+    message["From"] = Address(display_name=sender_name or "", addr_spec=from_address)
     message["To"] = ", ".join(draft.to)
     if draft.cc:
         message["Cc"] = ", ".join(draft.cc)
