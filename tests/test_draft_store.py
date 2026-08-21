@@ -53,6 +53,22 @@ def test_concurrent_provenance_change_is_rejected(tmp_path) -> None:
         )
 
 
+def test_legacy_provenance_loads_without_threading_metadata(tmp_path) -> None:
+    store = FileDraftStore((tmp_path / "drafts").resolve())
+    record = store.create(
+        account_id="personal", mailbox="Drafts", uid_validity="42", uid="99",
+        message_id="<draft@example.com>", attachment_hashes=(),
+    )
+    path = store.directory / f"{record.draft_id}.json"
+    value = json.loads(path.read_text(encoding="utf-8"))
+    value.pop("in_reply_to")
+    value.pop("references")
+    path.write_text(json.dumps(value), encoding="utf-8")
+    loaded = store.get(record.draft_id, "personal")
+    assert loaded.in_reply_to is None
+    assert loaded.references == ()
+
+
 def test_provenance_write_is_fsynced_and_interrupted_replace_keeps_old_json(tmp_path, monkeypatch) -> None:
     store = FileDraftStore((tmp_path / "drafts").resolve())
     record = store.create(

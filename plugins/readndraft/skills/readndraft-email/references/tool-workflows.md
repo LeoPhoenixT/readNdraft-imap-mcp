@@ -82,6 +82,12 @@ including both representations when rich, and confirm again. Updating replaces
 and expunges the prior tracked draft version. Neither operation sends mail or
 deletes an ordinary message.
 
+Each recipient element must be one bare mailbox or one named mailbox such as
+`Ada Lovelace <ada@example.com>`; do not place a comma-separated list or a
+group in one element. For a reply draft, pass the selected source's exact
+`account_id`, `mailbox`, `uid_validity`, and `uid` as `reply_to_message`. This
+adds safe thread headers only; preserve the requested recipients and subject.
+
 ## Move messages
 
 Resolve the account and refresh `list_mailboxes`. Use only raw mailbox names from

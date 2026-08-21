@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
@@ -51,6 +52,30 @@ from .protocol import HealthResponse, decode_request
 
 T = TypeVar("T")
 I = TypeVar("I")
+_MESSAGE_ID_RE = re.compile(r"<[^<>\s@]+@[^<>\s@]+>")
+MAX_THREAD_IDS = 100
+MAX_THREAD_BYTES = 8 * 1024
+
+
+def _message_ids(value: str, *, field: str) -> tuple[str, ...]:
+    """Accept only a whitespace-separated RFC 5322 message-id token sequence."""
+    if not isinstance(value, str) or len(value.encode("utf-8")) > MAX_THREAD_BYTES:
+        raise ValueError(f"invalid {field}")
+    tokens = tuple(_MESSAGE_ID_RE.findall(value))
+    if not tokens or _MESSAGE_ID_RE.sub("", value).strip():
+        raise ValueError(f"invalid {field}")
+    return tokens
+
+
+def _reply_thread(source_id: str, references: str | None) -> tuple[str, tuple[str, ...]]:
+    source = _message_ids(source_id, field="source Message-ID")
+    if len(source) != 1:
+        raise ValueError("invalid source Message-ID")
+    items = _message_ids(references, field="source References") if references else ()
+    normalized = tuple(dict.fromkeys((*items, source[0])))
+    if len(normalized) > MAX_THREAD_IDS or len(" ".join(normalized).encode("utf-8")) > MAX_THREAD_BYTES:
+        raise ValueError("reply threading metadata exceeds limit")
+    return source[0], normalized
 
 
 @dataclass(frozen=True, slots=True)
@@ -527,6 +552,7 @@ class BrokerService:
         body: str,
         html_body: str | None = None,
         attachment_names: tuple[str, ...] = (),
+        reply_to_message: MessageIdentity | None = None,
         client_id: str | None = None,
     ) -> DraftCreationResult:
         if self._audit is None:
@@ -534,9 +560,18 @@ class BrokerService:
         if self._drafts is None:
             raise RuntimeError("draft provenance store is required for draft creation")
         account = self._current_accounts().require_enabled(account_id)
+        if reply_to_message is not None and reply_to_message.account_id != account_id:
+            raise PermissionError("reply source belongs to another account")
         if self._attachments is None and attachment_names:
             raise RuntimeError("attachment exchange is not configured")
         prepared_attachments = tuple(DraftAttachment(item.filename, item.size, item.sha256, item.content) for item in self._attachments.prepare(attachment_names)) if attachment_names else ()
+        in_reply_to: str | None = None
+        references: tuple[str, ...] = ()
+        if reply_to_message is not None:
+            source_id, source_references = await self._client_call(
+                account_id, lambda client: client.get_threading_headers(reply_to_message)
+            )
+            in_reply_to, references = _reply_thread(source_id, source_references)
         draft = prepare_draft(
             to=to,
             cc=cc,
@@ -545,6 +580,8 @@ class BrokerService:
             body=body,
             html_body=html_body,
             attachments=prepared_attachments,
+            in_reply_to=in_reply_to,
+            references=references,
         )
         raw, message_id = build_draft_message(
             account.effective_sender_address, draft, sender_name=account.sender_name
@@ -582,6 +619,8 @@ class BrokerService:
                 uid=result.uid,
                 message_id=result.message_id,
                 attachment_hashes=result.attachment_hashes,
+                in_reply_to=in_reply_to,
+                references=references,
             )
         except Exception as exc:
             await self._audit.record(
@@ -643,6 +682,8 @@ class BrokerService:
             body=body,
             html_body=html_body,
             attachments=prepared_attachments,
+            in_reply_to=record.in_reply_to,
+            references=record.references,
         )
         raw, message_id = build_draft_message(
             account.effective_sender_address,

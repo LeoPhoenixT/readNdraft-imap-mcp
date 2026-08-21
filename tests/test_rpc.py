@@ -15,7 +15,7 @@ from readndraft_imap_mcp.imap.models import (
     MessageIdentity,
     MoveResult,
 )
-from readndraft_imap_mcp.ipc.rpc import BrokerRpcServer, _decode_request, _encode, _safe_error
+from readndraft_imap_mcp.ipc.rpc import BrokerRpcServer, _decode_request, _encode, _json_kwargs, _safe_error
 from readndraft_imap_mcp.mime.html import AuthoredHtmlError
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
@@ -163,6 +163,24 @@ def test_rpc_accepts_optional_html_body() -> None:
     base = {"account_id": "a", "to": ["x@example.com"], "subject": "s", "body": "b"}
     assert _decode_request(_frame("create_draft", {**base, "html_body": "<p>b</p>"}))["params"]["html_body"] == "<p>b</p>"
     assert _decode_request(_frame("create_draft", {**base, "html_body": None}))["params"]["html_body"] is None
+
+
+def test_rpc_accepts_only_a_complete_reply_identity() -> None:
+    base = {"account_id": "a", "to": ["x@example.com"], "subject": "s", "body": "b"}
+    identity = {"account_id": "a", "mailbox": "INBOX", "uid_validity": "1", "uid": "2"}
+    assert _decode_request(_frame("create_draft", {**base, "reply_to_message": identity}))["params"]["reply_to_message"] == identity
+    with pytest.raises(ValueError, match="invalid message identity"):
+        _decode_request(_frame("create_draft", {**base, "reply_to_message": {"account_id": "a"}}))
+
+
+def test_rpc_omits_absent_reply_identity_and_serializes_present_identity() -> None:
+    identity = MessageIdentity("a", "INBOX", "1", "2")
+    assert _json_kwargs({"reply_to_message": None}) == {}
+    assert _json_kwargs({"reply_to_message": identity}) == {
+        "reply_to_message": {
+            "account_id": "a", "mailbox": "INBOX", "uid_validity": "1", "uid": "2"
+        }
+    }
 
 
 def test_rpc_move_contract_is_exact_and_serializes_results() -> None:

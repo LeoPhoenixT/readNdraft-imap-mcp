@@ -150,6 +150,9 @@ while uv downloads the pinned package. If a stored password has changed, run
   Draft requests are rejected when CSS could fetch remote resources, hide
   content, or escape the message box; empty paragraphs are always preserved.
   To, Cc, and Bcc may all be empty when the user wants an unaddressed draft.
+  Each list item is one bare or named mailbox (for example, `Ada <ada@example.com>`).
+  `create_draft` may receive an exact source message identity as `reply_to_message`
+  to add safe reply threading; it does not derive recipients or rewrite subjects.
 - Update only a draft previously created by this MCP, after confirmation.
 - Inspect and repair local draft tracking with `drafts list` and `drafts repair`.
   `drafts forget` removes only the local tracking record; it never deletes or

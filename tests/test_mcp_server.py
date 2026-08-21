@@ -104,7 +104,12 @@ class FakeBroker:
     async def create_draft(self, account_id, **kwargs):
         assert account_id == "personal"
         assert kwargs["to"] == ("recipient@example.com",)
-        assert kwargs.get("html_body") == "<p>body</p>"
+        if kwargs["subject"] == "reply":
+            assert kwargs["reply_to_message"] == IDENTITY
+        else:
+            assert "reply_to_message" not in kwargs
+        if kwargs["subject"] == "draft":
+            assert kwargs.get("html_body") == "<p>body</p>"
         return DraftCreationResult(
             "personal", "Drafts", "42", "99", "<draft@example.com>", (), "draft-1"
         )
@@ -310,6 +315,21 @@ async def exercise_server() -> None:
         assert draft.structuredContent["mailbox"] == "Drafts"
         assert draft.structuredContent["uid"] == "99"
         assert draft.structuredContent["draft_id"] == "draft-1"
+
+        reply = await session.call_tool(
+            "create_draft",
+            {
+                "account_id": "personal",
+                "to": ["recipient@example.com"],
+                "subject": "reply",
+                "body": "body",
+                "reply_to_message": {
+                    "account_id": "personal", "mailbox": "INBOX",
+                    "uid_validity": "42", "uid": "7",
+                },
+            },
+        )
+        assert reply.isError is False, reply.content
 
         updated = await session.call_tool(
             "update_draft",
