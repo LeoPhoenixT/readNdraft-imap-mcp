@@ -186,7 +186,7 @@ def _decode_search_cursor(
 
 
 class BrokerService:
-    """Capability-minimized broker with Phase 2 read-only operations."""
+    """Capability-minimized broker service."""
 
     def __init__(
         self,

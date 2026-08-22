@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from readndraft_imap_mcp.poc.credentials import (
+from readndraft_imap_mcp.credentials.backend import (
     delete_secret,
     load_secret,
     save_secret,
@@ -10,7 +10,7 @@ from readndraft_imap_mcp.poc.credentials import (
 
 
 class KeyringCredentialStore:
-    """Broker-side adapter for the approved OS keyring selected in Phase 0."""
+    """Broker-side adapter for the approved OS keyring backend."""
 
     async def save_secret(self, account_id: str, secret: str) -> None:
         await asyncio.to_thread(save_secret, account_id, secret)

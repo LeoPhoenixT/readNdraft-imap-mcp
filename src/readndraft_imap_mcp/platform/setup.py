@@ -9,8 +9,8 @@ from collections.abc import Callable
 from readndraft_imap_mcp.admin import AccountFile
 from readndraft_imap_mcp.broker import AccountConfig
 from readndraft_imap_mcp.credentials import KeyringCredentialStore
+from readndraft_imap_mcp.credentials.backend import require_approved_backend
 from readndraft_imap_mcp.imap import ImapClient
-from readndraft_imap_mcp.poc.credentials import require_approved_backend
 
 from .paths import AppPaths, current_app_paths
 
