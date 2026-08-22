@@ -45,7 +45,6 @@ dev = [
 
 [project.scripts]
 readndraft-imap-mcp = "readndraft_imap_mcp.cli:main"
-readndraft-poc = "readndraft_imap_mcp.poc.cli:main"
 readndraft-admin = "readndraft_imap_mcp.admin.cli:main"
 readndraft-broker = "readndraft_imap_mcp.broker.daemon:main"
 readndraft-install = "readndraft_imap_mcp.platform.install:main"

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
+import subprocess
 import tarfile
 import tomllib
 import zipfile
-import importlib.util
-import subprocess
 from pathlib import Path
-
 
 _SPEC = importlib.util.spec_from_file_location(
     "release_check", Path("scripts/release_check.py").resolve()
@@ -79,12 +78,15 @@ def test_built_distributions_contain_unified_cli_and_skills(tmp_path) -> None:
         entry_point_text = archive.read(entry_points).decode("utf-8")
         assert "[console_scripts]" in entry_point_text
         assert "readndraft-imap-mcp" in entry_point_text
+        assert "readndraft-poc" not in entry_point_text
         assert "readndraft-approve" not in entry_point_text
         assert "[gui_scripts]" in entry_point_text
         assert "readndraft-mcp" in entry_point_text
         assert "readndraft-launch" in entry_point_text
+        assert not any("readndraft_imap_mcp/poc/" in name for name in names)
     with tarfile.open(sdists[0]) as archive:
         names = set(archive.getnames())
+        assert not any("readndraft_imap_mcp/poc/" in name for name in names)
         assert any(name.endswith("/skills/readndraft-email/SKILL.md") for name in names)
         assert any(name.endswith("/skills/readndraft-update/SKILL.md") for name in names)
         assert any(name.endswith("/LICENSE") for name in names)
