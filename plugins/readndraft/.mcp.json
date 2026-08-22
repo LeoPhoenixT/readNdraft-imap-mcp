@@ -3,7 +3,7 @@
     "readndraft": {
       "type": "stdio",
       "command": "uv",
-      "args": ["tool", "run", "readndraft-imap-mcp@0.6.0", "mcp"]
+      "args": ["tool", "run", "readndraft-imap-mcp@0.7.0", "mcp"]
     }
   }
 }
