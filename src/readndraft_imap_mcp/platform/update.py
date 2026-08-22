@@ -16,6 +16,8 @@ from typing import Callable
 
 from readndraft_imap_mcp import __version__
 
+from ._utils import remove_path as _remove_path
+from ._utils import run as _run
 from .client_config import claude_code_config, codex_config, uvx_invocation
 from .paths import AppPaths, current_app_paths
 from .skill import SKILL_NAMES, install_skill, skill_destination, skill_status
@@ -241,13 +243,6 @@ def _snapshot_skills(client: str, home: Path, transaction: Path) -> dict[str, st
     return present
 
 
-def _remove_path(path: Path) -> None:
-    if path.is_dir():
-        shutil.rmtree(path)
-    else:
-        path.unlink(missing_ok=True)
-
-
 def _restore_skills(client: str, home: Path, transaction: Path, present: dict[str, str]) -> None:
     for name in SKILL_NAMES:
         target = skill_destination(client, home, name)
@@ -258,10 +253,6 @@ def _restore_skills(client: str, home: Path, transaction: Path, present: dict[st
         elif present[name] == "file":
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(transaction / name, target)
-
-
-def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, check=False, capture_output=True, text=True)
 
 
 def _apply_codex(home: Path, version: str) -> None:
@@ -415,7 +406,8 @@ def main(argv: list[str] | None = None) -> int:
             summary = ", ".join(
                 f"{item.client} to {item.target_version}" for item in previews
             )
-            if input(f"Update readNdraft MCP and both managed skills for {summary}? (y/N): ").strip().casefold() not in {"y", "yes"}:
+            prompt = f"Update readNdraft MCP and both managed skills for {summary}? (y/N): "
+            if input(prompt).strip().casefold() not in {"y", "yes"}:
                 print("Update cancelled.")
                 return 1
             forced = {

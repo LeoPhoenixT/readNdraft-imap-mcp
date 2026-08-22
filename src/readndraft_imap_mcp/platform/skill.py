@@ -9,6 +9,7 @@ import shutil
 import sys
 from pathlib import Path
 
+from ._utils import remove_path as _remove_path
 from .paths import AppPaths, current_app_paths
 
 DEFAULT_SKILL_NAME = "readndraft-email"
@@ -58,13 +59,6 @@ def _digest(root: Path) -> str:
         digest.update(b"\0")
         digest.update(path.read_bytes())
     return digest.hexdigest()
-
-
-def _remove_path(path: Path) -> None:
-    if path.is_dir():
-        shutil.rmtree(path)
-    else:
-        path.unlink(missing_ok=True)
 
 
 def _manifest_path(paths: AppPaths) -> Path:
@@ -222,7 +216,8 @@ def uninstall_skill(
 
 def main(argv: list[str] | None = None) -> int:
     print(
-        "Warning: direct skill installation is deprecated; Claude Code and Codex users should install the readNdraft plugin.",
+        "Warning: direct skill installation is deprecated; Claude Code and Codex users "
+        "should install the readNdraft plugin.",
         file=sys.stderr,
     )
     parser = argparse.ArgumentParser(description="Manage the packaged readNdraft Agent Skill")

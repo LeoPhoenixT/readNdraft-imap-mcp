@@ -11,8 +11,8 @@ from dataclasses import asdict, dataclass, replace
 from time import perf_counter
 from typing import Generic, TypeVar
 
-from readndraft_imap_mcp.audit import AuditEvent, AuditSink, AuditUnavailableError
 from readndraft_imap_mcp.attachments import AttachmentExchange, InputAttachment, SavedAttachment
+from readndraft_imap_mcp.audit import AuditEvent, AuditSink, AuditUnavailableError
 from readndraft_imap_mcp.credentials import CredentialStore
 from readndraft_imap_mcp.drafts import DraftProvenanceError, FileDraftStore
 from readndraft_imap_mcp.imap.client import (
@@ -21,10 +21,9 @@ from readndraft_imap_mcp.imap.client import (
     ImapMovePartialError,
 )
 from readndraft_imap_mcp.imap.models import (
-    AttachmentContent,
     BatchFlagChange,
-    BatchMoveResult,
     BatchMessageContent,
+    BatchMoveResult,
     DraftCreationResult,
     DraftUpdateResult,
     FlagChange,
@@ -36,11 +35,12 @@ from readndraft_imap_mcp.imap.models import (
     SearchFilters,
     SearchPage,
     SearchResult,
-    SearchTargetError,
     SearchTarget,
+    SearchTargetError,
 )
 from readndraft_imap_mcp.mime.drafts import (
     DraftAttachment,
+    PreparedDraft,
     build_draft_message,
     prepare_draft,
 )
@@ -51,10 +51,21 @@ from .limits import AccountRequestQuota, RequestQuotaError
 from .protocol import HealthResponse, decode_request
 
 T = TypeVar("T")
-I = TypeVar("I")
+Item = TypeVar("Item")
 _MESSAGE_ID_RE = re.compile(r"<[^<>\s@]+@[^<>\s@]+>")
 MAX_THREAD_IDS = 100
 MAX_THREAD_BYTES = 8 * 1024
+_MUTATION_OPERATIONS = {
+    "set_star": ("set_star", r"\Flagged"),
+    "set_read_state": ("set_read_state", r"\Seen"),
+}
+
+
+def _mutation_spec(operation: str) -> tuple[str, str]:
+    try:
+        return _MUTATION_OPERATIONS[operation]
+    except KeyError as exc:
+        raise ValueError(f"unsupported mutation operation: {operation}") from exc
 
 
 def _message_ids(value: str, *, field: str) -> tuple[str, ...]:
@@ -247,8 +258,8 @@ class BrokerService:
     async def _batch_client_call(
         self,
         account_id: str,
-        items: tuple[I, ...],
-        operation: Callable[[ImapClient, I], T],
+        items: tuple[Item, ...],
+        operation: Callable[[ImapClient, Item], T],
         *,
         max_items: int,
         response_timeout: bool = True,
@@ -541,6 +552,52 @@ class BrokerService:
             attachment.content,
         )
 
+    def _prepare_attachments(
+        self, attachment_names: tuple[str, ...]
+    ) -> tuple[DraftAttachment, ...]:
+        if self._attachments is None:
+            if attachment_names:
+                raise RuntimeError("attachment exchange is not configured")
+            return ()
+        return tuple(
+            DraftAttachment(item.filename, item.size, item.sha256, item.content)
+            for item in self._attachments.prepare(attachment_names)
+        )
+
+    def _build_draft(
+        self,
+        account: AccountConfig,
+        *,
+        to: tuple[str, ...],
+        cc: tuple[str, ...],
+        bcc: tuple[str, ...],
+        subject: str,
+        body: str,
+        html_body: str | None,
+        attachment_names: tuple[str, ...],
+        in_reply_to: str | None,
+        references: tuple[str, ...],
+        message_id: str | None = None,
+    ) -> tuple[bytes, str, PreparedDraft]:
+        draft = prepare_draft(
+            to=to,
+            cc=cc,
+            bcc=bcc,
+            subject=subject,
+            body=body,
+            html_body=html_body,
+            attachments=self._prepare_attachments(attachment_names),
+            in_reply_to=in_reply_to,
+            references=references,
+        )
+        raw, message_id = build_draft_message(
+            account.effective_sender_address,
+            draft,
+            sender_name=account.sender_name,
+            message_id=message_id,
+        )
+        return raw, message_id, draft
+
     async def create_draft(
         self,
         account_id: str,
@@ -562,9 +619,6 @@ class BrokerService:
         account = self._current_accounts().require_enabled(account_id)
         if reply_to_message is not None and reply_to_message.account_id != account_id:
             raise PermissionError("reply source belongs to another account")
-        if self._attachments is None and attachment_names:
-            raise RuntimeError("attachment exchange is not configured")
-        prepared_attachments = tuple(DraftAttachment(item.filename, item.size, item.sha256, item.content) for item in self._attachments.prepare(attachment_names)) if attachment_names else ()
         in_reply_to: str | None = None
         references: tuple[str, ...] = ()
         if reply_to_message is not None:
@@ -572,19 +626,17 @@ class BrokerService:
                 account_id, lambda client: client.get_threading_headers(reply_to_message)
             )
             in_reply_to, references = _reply_thread(source_id, source_references)
-        draft = prepare_draft(
+        raw, message_id, draft = self._build_draft(
+            account,
             to=to,
             cc=cc,
             bcc=bcc,
             subject=subject,
             body=body,
             html_body=html_body,
-            attachments=prepared_attachments,
+            attachment_names=attachment_names,
             in_reply_to=in_reply_to,
             references=references,
-        )
-        raw, message_id = build_draft_message(
-            account.effective_sender_address, draft, sender_name=account.sender_name
         )
         started = perf_counter()
         try:
@@ -671,24 +723,17 @@ class BrokerService:
         record = self._drafts.get(draft_id, account_id)
         if not record.update_supported:
             raise RuntimeError("draft update is unsupported without stable APPENDUID provenance")
-        if self._attachments is None and attachment_names:
-            raise RuntimeError("attachment exchange is not configured")
-        prepared_attachments = tuple(DraftAttachment(item.filename, item.size, item.sha256, item.content) for item in self._attachments.prepare(attachment_names)) if attachment_names else ()
-        draft = prepare_draft(
+        raw, message_id, draft = self._build_draft(
+            account,
             to=to,
             cc=cc,
             bcc=bcc,
             subject=subject,
             body=body,
             html_body=html_body,
-            attachments=prepared_attachments,
+            attachment_names=attachment_names,
             in_reply_to=record.in_reply_to,
             references=record.references,
-        )
-        raw, message_id = build_draft_message(
-            account.effective_sender_address,
-            draft,
-            sender_name=account.sender_name,
             message_id=record.message_id,
         )
         started = perf_counter()
@@ -802,12 +847,11 @@ class BrokerService:
     ) -> FlagChange:
         if self._audit is None:
             raise AuditUnavailableError("audit sink is required for mutations")
+        method_name, state_flag = _mutation_spec(operation)
         started = perf_counter()
         try:
             def mutate(client: ImapClient) -> FlagChange:
-                if operation == "set_star":
-                    return client.set_star(identity, enabled)
-                return client.set_read_state(identity, enabled)
+                return getattr(client, method_name)(identity, enabled)
 
             result = await self._client_call(
                 identity.account_id, mutate, response_timeout=False
@@ -834,11 +878,7 @@ class BrokerService:
                 uid=identity.uid,
                 success=True,
                 duration_ms=int((perf_counter() - started) * 1000),
-                old_state=(
-                    r"\Flagged" in result.old_flags
-                    if operation == "set_star"
-                    else r"\Seen" in result.old_flags
-                ),
+                old_state=state_flag in result.old_flags,
                 new_state=enabled,
                 client_id=client_id,
             )
@@ -870,6 +910,7 @@ class BrokerService:
     ) -> tuple[BatchFlagChange, ...]:
         if self._audit is None:
             raise AuditUnavailableError("audit sink is required for mutations")
+        method_name, state_flag = _mutation_spec(operation)
         if not identities or len(identities) > 50:
             raise ValueError("batch must contain between 1 and 50 identities")
         keys = [
@@ -889,9 +930,7 @@ class BrokerService:
             account_items = tuple(identity for _, identity in indexed)
 
             def mutate(client: ImapClient, identity: MessageIdentity) -> FlagChange:
-                if operation == "set_star":
-                    return client.set_star(identity, enabled)
-                return client.set_read_state(identity, enabled)
+                return getattr(client, method_name)(identity, enabled)
 
             started = perf_counter()
             try:
@@ -925,11 +964,7 @@ class BrokerService:
                         uid=identity.uid,
                         success=change is not None,
                         duration_ms=duration_ms,
-                        old_state=(
-                            (r"\Flagged" in change.old_flags)
-                            if change is not None and operation == "set_star"
-                            else (r"\Seen" in change.old_flags) if change is not None else None
-                        ),
+                        old_state=(state_flag in change.old_flags if change is not None else None),
                         new_state=enabled if change is not None else None,
                         error_category=outcome.error,
                         client_id=client_id,

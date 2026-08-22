@@ -59,7 +59,8 @@ def test_no_generic_flag_mutation_api() -> None:
 def test_no_broad_expunge_fallback() -> None:
     source = Path("src/readndraft_imap_mcp/imap/client.py").read_text(encoding="utf-8")
     assert ".expunge(" not in source.casefold()
-    assert 'uid("EXPUNGE", record.uid)' in source
+    assert 'self.imap.uid("EXPUNGE", uid)' in source
+    assert "self._delete_and_expunge_uid(record.uid)" in source
 
 
 def test_message_move_fallback_is_private_and_uses_targeted_uid_expunge() -> None:

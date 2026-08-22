@@ -11,7 +11,7 @@ from readndraft_imap_mcp.broker import (
     ProtocolError,
     decode_request,
 )
-from readndraft_imap_mcp.broker.service import _reply_thread
+from readndraft_imap_mcp.broker.service import _mutation_spec, _reply_thread
 
 
 def test_reply_thread_normalizes_references_and_rejects_invalid_source() -> None:
@@ -21,6 +21,11 @@ def test_reply_thread_normalizes_references_and_rejects_invalid_source() -> None
     )
     with pytest.raises(ValueError, match="source Message-ID"):
         _reply_thread("not-a-message-id", None)
+
+
+def test_mutation_spec_rejects_unknown_operations() -> None:
+    with pytest.raises(ValueError, match="unsupported mutation operation"):
+        _mutation_spec("unknown")
 
 
 def test_health_is_the_only_phase1_broker_operation() -> None:

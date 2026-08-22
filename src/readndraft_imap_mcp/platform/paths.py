@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 import secrets
 import sys
-from hashlib import sha256
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION

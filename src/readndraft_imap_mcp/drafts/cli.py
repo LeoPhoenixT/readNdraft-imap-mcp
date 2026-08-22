@@ -8,7 +8,7 @@ from readndraft_imap_mcp.credentials import KeyringCredentialStore
 from readndraft_imap_mcp.imap import ImapClient
 from readndraft_imap_mcp.platform import current_app_paths
 
-from .store import DraftProvenance, DraftProvenanceError, FileDraftStore
+from .store import DraftProvenance, FileDraftStore
 
 
 def _matches(record: DraftProvenance, accounts, credentials) -> tuple[str, ...]:

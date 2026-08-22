@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from ._utils import run as _run
 from .paths import AppPaths, current_app_paths
 from .skill import (
     DEFAULT_SKILL_NAME,
@@ -34,10 +35,6 @@ class MigrationResult:
     client: str
     mcp_removed: bool
     skills_removed: tuple[str, ...]
-
-
-def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, check=False, capture_output=True, text=True)
 
 
 def _inspect_mcp(client: str, home: Path, cwd: Path | None) -> str:

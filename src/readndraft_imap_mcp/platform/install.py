@@ -57,7 +57,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.action == "install-linux-unit":
         if not sys.platform.startswith("linux"):
             raise RuntimeError("systemd user units are supported only on Linux")
-        target = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "systemd" / "user" / "readndraft-broker.service"
+        target = (
+            Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+            / "systemd"
+            / "user"
+            / "readndraft-broker.service"
+        )
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(linux_unit(), encoding="utf-8")
         print(f"Wrote {target}; run: systemctl --user daemon-reload && systemctl --user enable --now readndraft-broker")

@@ -6,12 +6,11 @@ from email.message import Message
 from email.parser import BytesParser
 from html.parser import HTMLParser
 
-from readndraft_imap_mcp.mime.html import sanitize_inbound_html
-
 from readndraft_imap_mcp.imap.models import (
     AttachmentContent,
     AttachmentMetadata,
 )
+from readndraft_imap_mcp.mime.html import sanitize_inbound_html
 
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 MAX_MESSAGE_BYTES = 50 * 1024 * 1024

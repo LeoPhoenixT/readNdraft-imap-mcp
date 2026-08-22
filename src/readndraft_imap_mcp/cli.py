@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 
-
 HELP = """usage: readndraft-imap-mcp COMMAND [OPTIONS]
 
 Commands:

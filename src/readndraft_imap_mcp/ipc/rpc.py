@@ -9,24 +9,23 @@ import stat
 import sys
 import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import date
-from contextlib import contextmanager
-from collections.abc import Iterator
 from multiprocessing.connection import AuthenticationError, Client, Listener
 from pathlib import Path
 from typing import Any
 
 from readndraft_imap_mcp import __version__
-from readndraft_imap_mcp.broker.service import BrokerService
 from readndraft_imap_mcp.broker.limits import RequestQuotaError
+from readndraft_imap_mcp.broker.service import BrokerService
 from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
 from readndraft_imap_mcp.imap.models import (
-    AttachmentContent,
     AttachmentMetadata,
     BatchFlagChange,
-    BatchMoveResult,
     BatchMessageContent,
+    BatchMoveResult,
     DraftCreationResult,
     DraftUpdateResult,
     FlagChange,
@@ -38,8 +37,8 @@ from readndraft_imap_mcp.imap.models import (
     SearchFilters,
     SearchPage,
     SearchResult,
-    SearchTargetError,
     SearchTarget,
+    SearchTargetError,
 )
 from readndraft_imap_mcp.mime.html import AuthoredHtmlError
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
@@ -165,6 +164,23 @@ def _identity(value: object) -> MessageIdentity:
     }:
         raise ValueError("invalid message identity")
     return MessageIdentity(**value)
+
+
+def _filters_from_json(values: dict[str, Any]) -> SearchFilters:
+    return SearchFilters(
+        **{
+            **values,
+            "after": date.fromisoformat(values["after"]) if values.get("after") else None,
+            "before": date.fromisoformat(values["before"]) if values.get("before") else None,
+        }
+    )
+
+
+def _filters_to_json(filters: SearchFilters) -> dict[str, Any]:
+    values = asdict(filters)
+    values["after"] = filters.after.isoformat() if filters.after else None
+    values["before"] = filters.before.isoformat() if filters.before else None
+    return values
 
 
 def _request_frame(operation: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -345,14 +361,7 @@ class BrokerRpcServer:
         if operation == "list_mailboxes":
             return [asdict(item) for item in await self.broker.list_mailboxes(params["account_id"])]
         if operation == "search_emails":
-            values = params["filters"]
-            filters = SearchFilters(
-                **{
-                    **values,
-                    "after": date.fromisoformat(values["after"]) if values.get("after") else None,
-                    "before": date.fromisoformat(values["before"]) if values.get("before") else None,
-                }
-            )
+            filters = _filters_from_json(params["filters"])
             return [
                 asdict(item)
                 for item in await self.broker.search_emails(
@@ -361,14 +370,7 @@ class BrokerRpcServer:
                 )
             ]
         if operation == "search_email_targets":
-            values = params["filters"]
-            filters = SearchFilters(
-                **{
-                    **values,
-                    "after": date.fromisoformat(values["after"]) if values.get("after") else None,
-                    "before": date.fromisoformat(values["before"]) if values.get("before") else None,
-                }
-            )
+            filters = _filters_from_json(params["filters"])
             targets = params["targets"]
             if not isinstance(targets, list) or any(
                 not isinstance(item, list)
@@ -415,24 +417,14 @@ class BrokerRpcServer:
             return asdict(await self.broker.update_draft(params["account_id"], params["draft_id"], **kwargs))
         if operation in {"set_star", "set_read_state"}:
             identity = _identity(params["identity"])
-            if operation == "set_star":
-                result = await self.broker.set_star(identity, params["enabled"], params.get("client_id"))
-            else:
-                result = await self.broker.set_read_state(identity, params["enabled"], params.get("client_id"))
+            result = await getattr(self.broker, operation)(
+                identity, params["enabled"], params.get("client_id")
+            )
             return asdict(result)
-        if operation == "set_read_state_batch":
+        if operation in {"set_read_state_batch", "set_star_batch"}:
             return [
                 asdict(item)
-                for item in await self.broker.set_read_state_batch(
-                    tuple(_identity(value) for value in params["identities"]),
-                    params["enabled"],
-                    params.get("client_id"),
-                )
-            ]
-        if operation == "set_star_batch":
-            return [
-                asdict(item)
-                for item in await self.broker.set_star_batch(
+                for item in await getattr(self.broker, operation)(
                     tuple(_identity(value) for value in params["identities"]),
                     params["enabled"],
                     params.get("client_id"),
@@ -652,11 +644,8 @@ class IpcBrokerClient:
         return tuple(Mailbox(**item) for item in await self._request("list_mailboxes", {"account_id": account_id}))
 
     async def search_emails(self, account_id, mailbox, filters, limit=50):
-        values = asdict(filters)
-        values["after"] = filters.after.isoformat() if filters.after else None
-        values["before"] = filters.before.isoformat() if filters.before else None
         result = await self._request("search_emails", {
-            "account_id": account_id, "mailbox": mailbox, "filters": values,
+            "account_id": account_id, "mailbox": mailbox, "filters": _filters_to_json(filters),
             "limit": limit,
         })
         return tuple(SearchResult(
@@ -666,14 +655,11 @@ class IpcBrokerClient:
         ) for item in result)
 
     async def search_email_targets(self, targets, filters, limit=50, cursor=None):
-        values = asdict(filters)
-        values["after"] = filters.after.isoformat() if filters.after else None
-        values["before"] = filters.before.isoformat() if filters.before else None
         result = await self._request(
             "search_email_targets",
             {
                 "targets": [list(item) for item in targets],
-                "filters": values,
+                "filters": _filters_to_json(filters),
                 "limit": limit,
                 "cursor": cursor,
             },
@@ -734,14 +720,24 @@ class IpcBrokerClient:
         return DraftCreationResult(**{**item, "attachment_hashes": tuple(item["attachment_hashes"])})
 
     async def update_draft(self, account_id, draft_id, **kwargs):
-        item = await self._request("update_draft", {"account_id": account_id, "draft_id": draft_id, **_json_kwargs(kwargs)})
+        item = await self._request(
+            "update_draft",
+            {"account_id": account_id, "draft_id": draft_id, **_json_kwargs(kwargs)},
+        )
         return DraftUpdateResult(**{**item, "attachment_hashes": tuple(item["attachment_hashes"])})
 
     async def set_star(self, identity, starred, client_id=None):
-        return _flag_change(await self._request("set_star", {"identity": asdict(identity), "enabled": starred, "client_id": client_id}))
+        return await self._flag_mutation("set_star", identity, starred, client_id)
 
     async def set_read_state(self, identity, read, client_id=None):
-        return _flag_change(await self._request("set_read_state", {"identity": asdict(identity), "enabled": read, "client_id": client_id}))
+        return await self._flag_mutation("set_read_state", identity, read, client_id)
+
+    async def _flag_mutation(self, operation, identity, enabled, client_id):
+        item = await self._request(
+            operation,
+            {"identity": asdict(identity), "enabled": enabled, "client_id": client_id},
+        )
+        return _flag_change(item)
 
     async def set_read_state_batch(self, identities, read, client_id=None):
         items = await self._request(
@@ -792,7 +788,13 @@ class IpcBrokerClient:
 
 def _json_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     return {
-        key: (list(value) if isinstance(value, tuple) else asdict(value) if isinstance(value, MessageIdentity) else value)
+        key: (
+            list(value)
+            if isinstance(value, tuple)
+            else asdict(value)
+            if isinstance(value, MessageIdentity)
+            else value
+        )
         for key, value in kwargs.items()
         if key != "reply_to_message" or value is not None
     }

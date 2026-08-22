@@ -110,9 +110,32 @@ class JsonlAuditSink:
 
     def verify_sync(self) -> int:
         with self._lock:
-            count, previous = self._verify_sync()
-            self._last_hash = previous
-            return count
+            with _os_lock(self._lock_path):
+                count, previous = self._verify_sync()
+                self._last_hash = previous
+                return count
+
+    def repair_sync(self) -> tuple[int, Path | None, str | None]:
+        """Verify the chain or atomically archive it while appenders are excluded."""
+
+        with self._lock:
+            with _os_lock(self._lock_path):
+                try:
+                    count, previous = self._verify_sync()
+                except RuntimeError as exc:
+                    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+                    archive = self.path.with_name(f"{self.path.name}.corrupt-{stamp}")
+                    suffix = 1
+                    while archive.exists():
+                        archive = self.path.with_name(
+                            f"{self.path.name}.corrupt-{stamp}-{suffix}"
+                        )
+                        suffix += 1
+                    self.path.rename(archive)
+                    self._last_hash = None
+                    return 0, archive, str(exc)
+                self._last_hash = previous
+                return count, None, None
 
     async def verify(self) -> int:
         """Verify the complete hash chain and return its event count."""
