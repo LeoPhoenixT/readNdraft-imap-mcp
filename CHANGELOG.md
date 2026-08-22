@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1
+
+### Removed
+
+- Removed the undocumented Phase 0 diagnostic CLI; normal MCP, doctor, and
+  account functionality is unaffected.
+
 ## 0.6.0
 
 ### Added

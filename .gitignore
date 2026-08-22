@@ -6,7 +6,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
-phase0-report*.json
 .agents/skills/readndraft-release/
 /PLAN.md
 

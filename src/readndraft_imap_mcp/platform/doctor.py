@@ -9,8 +9,8 @@ from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.admin import AccountFile
 from readndraft_imap_mcp.audit import JsonlAuditSink
 from readndraft_imap_mcp.credentials import KeyringCredentialStore
+from readndraft_imap_mcp.credentials.backend import inspect_backend
 from readndraft_imap_mcp.imap import ImapClient
-from readndraft_imap_mcp.poc.credentials import inspect_backend
 
 from .launcher import broker_health
 from .paths import current_app_paths

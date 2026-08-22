@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from readndraft_imap_mcp.imap.models import (
-    AttachmentContent,
     AttachmentMetadata,
     BatchFlagChange,
     BatchMoveResult,

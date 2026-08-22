@@ -28,7 +28,7 @@ def test_mutation_spec_rejects_unknown_operations() -> None:
         _mutation_spec("unknown")
 
 
-def test_health_is_the_only_phase1_broker_operation() -> None:
+def test_health_contract_is_restricted_to_health() -> None:
     assert decode_request({"operation": "health"}) == HealthRequest()
     assert BrokerService().handle({"operation": "health"}) == {
         "ok": True,

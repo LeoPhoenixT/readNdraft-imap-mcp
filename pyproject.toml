@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "readndraft-imap-mcp"
-version = "0.7.0"
+version = "0.7.1"
 description = "Capability-minimized IMAP MCP service"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -45,7 +45,6 @@ dev = [
 
 [project.scripts]
 readndraft-imap-mcp = "readndraft_imap_mcp.cli:main"
-readndraft-poc = "readndraft_imap_mcp.poc.cli:main"
 readndraft-admin = "readndraft_imap_mcp.admin.cli:main"
 readndraft-broker = "readndraft_imap_mcp.broker.daemon:main"
 readndraft-install = "readndraft_imap_mcp.platform.install:main"

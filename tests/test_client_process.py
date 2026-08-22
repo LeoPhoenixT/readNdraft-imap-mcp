@@ -7,12 +7,11 @@ import sys
 import time
 
 import pytest
-
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+
 from readndraft_imap_mcp.platform.launcher import broker_healthy
 from readndraft_imap_mcp.platform.paths import current_app_paths
-from readndraft_imap_mcp.poc.ipc import run_ipc_probe
 
 
 async def _exercise_stdio(tmp_path) -> None:
@@ -84,12 +83,6 @@ async def _exercise_on_demand_stdio(tmp_path, environment) -> None:
 
 
 def test_on_demand_launcher_starts_frontend_and_idle_broker(tmp_path, monkeypatch) -> None:
-    try:
-        run_ipc_probe()
-    except RuntimeError as exc:
-        if isinstance(exc.__cause__, PermissionError):
-            pytest.skip("test sandbox prohibits local sockets")
-        raise
     environment = os.environ.copy()
     if sys.platform == "win32":
         root = str((tmp_path / "local-app-data").resolve())
@@ -106,7 +99,12 @@ def test_on_demand_launcher_starts_frontend_and_idle_broker(tmp_path, monkeypatc
         for name, value in values.items():
             monkeypatch.setenv(name, value)
 
-    asyncio.run(_exercise_on_demand_stdio(tmp_path, environment))
+    try:
+        asyncio.run(_exercise_on_demand_stdio(tmp_path, environment))
+    except RuntimeError as exc:
+        if isinstance(exc.__cause__, PermissionError):
+            pytest.skip("test sandbox prohibits local sockets")
+        raise
     paths = current_app_paths()
     time.sleep(1)
     assert broker_healthy(paths, timeout=0.2) is False

@@ -165,7 +165,7 @@ def _quote_search(value: str) -> str:
     try:
         value.encode("ascii")
     except UnicodeEncodeError as exc:
-        raise ValueError("Phase 2 search currently requires ASCII text") from exc
+        raise ValueError("search currently requires ASCII text") from exc
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 

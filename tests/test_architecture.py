@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def test_phase1_package_boundaries_exist() -> None:
+def test_package_boundaries_exist() -> None:
     package = Path("src/readndraft_imap_mcp")
     expected = {
         "admin",

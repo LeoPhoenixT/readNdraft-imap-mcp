@@ -32,7 +32,7 @@ BrokerResponse: TypeAlias = HealthResponse
 
 
 def decode_request(payload: object) -> BrokerRequest:
-    """Decode only the operations implemented by the current broker phase."""
+    """Decode the compatibility health operation allowlist."""
     if not isinstance(payload, dict) or payload != {"operation": "health"}:
         raise ProtocolError("operation is not allowed")
     return HealthRequest()

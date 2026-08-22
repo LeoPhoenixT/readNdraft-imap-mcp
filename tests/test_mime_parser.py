@@ -20,7 +20,7 @@ def build_message() -> EmailMessage:
     message = EmailMessage()
     message["From"] = "sender@example.com"
     message["To"] = "recipient@example.com"
-    message["Subject"] = "Phase 2 test"
+    message["Subject"] = "MIME parser test"
     message.set_content("safe plain text")
     message.add_alternative("<script>ignored()</script><p>HTML</p>", subtype="html")
     message.add_attachment(
@@ -36,7 +36,7 @@ def test_plain_text_and_safe_headers_exclude_html() -> None:
     parsed = parse_message(build_message().as_bytes())
     assert plain_text(parsed).strip() == "safe plain text"
     assert "script" not in plain_text(parsed)
-    assert safe_headers(parsed)["subject"] == "Phase 2 test"
+    assert safe_headers(parsed)["subject"] == "MIME parser test"
 
 
 def test_attachment_metadata_and_content_use_safe_filename() -> None:
