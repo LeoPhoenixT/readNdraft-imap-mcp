@@ -76,14 +76,31 @@ class DraftProvenance:
             "attachment_hashes",
             "created_at",
             "updated_at",
-            "superseded_uid", "in_reply_to", "references",
+            "superseded_uid",
+            "in_reply_to",
+            "references",
         }
         if isinstance(value, dict):
-            value = {**value, "superseded_uid": value.get("superseded_uid"), "in_reply_to": value.get("in_reply_to"), "references": value.get("references", [])}
-        if set(value) != expected or not isinstance(value["attachment_hashes"], list) or not isinstance(value["references"], list):
+            value = {
+                **value,
+                "superseded_uid": value.get("superseded_uid"),
+                "in_reply_to": value.get("in_reply_to"),
+                "references": value.get("references", []),
+            }
+        if (
+            set(value) != expected
+            or not isinstance(value["attachment_hashes"], list)
+            or not isinstance(value["references"], list)
+        ):
             raise DraftProvenanceError("invalid draft provenance shape")
         try:
-            return cls(**{**value, "attachment_hashes": tuple(value["attachment_hashes"]), "references": tuple(value["references"])})
+            return cls(
+                **{
+                    **value,
+                    "attachment_hashes": tuple(value["attachment_hashes"]),
+                    "references": tuple(value["references"]),
+                }
+            )
         except TypeError as exc:
             raise DraftProvenanceError("invalid draft provenance values") from exc
 

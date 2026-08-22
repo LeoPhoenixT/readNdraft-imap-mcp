@@ -68,6 +68,9 @@ jobs:
       - name: Run tests
         run: uv run --locked pytest
 
+      - name: Lint
+        run: uv run --locked ruff check src
+
       - name: Enforce capability and secret policy
         run: uv run --locked python scripts/security_check.py
 

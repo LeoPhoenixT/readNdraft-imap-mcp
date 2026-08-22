@@ -3,10 +3,9 @@ from __future__ import annotations
 from typing import Protocol
 
 from readndraft_imap_mcp.imap.models import (
-    AttachmentContent,
     BatchFlagChange,
-    BatchMoveResult,
     BatchMessageContent,
+    BatchMoveResult,
     DraftCreationResult,
     DraftUpdateResult,
     FlagChange,

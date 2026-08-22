@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Event
 
 import pytest
 
@@ -90,3 +91,38 @@ def test_audit_repair_archives_forked_log(monkeypatch, tmp_path: Path) -> None:
     assert admin_cli.main(["audit", "repair"]) == 0
     assert not paths.audit_file.exists()
     assert len(list(paths.state_dir.glob("audit.jsonl.corrupt-*"))) == 1
+
+
+def test_repair_and_append_are_serialized_across_sinks(tmp_path: Path) -> None:
+    path = (tmp_path / "audit.jsonl").resolve()
+    _write_fork(path)
+    repair_sink = JsonlAuditSink(path)
+    append_sink = JsonlAuditSink(path)
+    verified = Event()
+    release_repair = Event()
+    append_started = Event()
+    original_verify = repair_sink._verify_sync
+
+    def paused_verify() -> tuple[int, str]:
+        try:
+            return original_verify()
+        finally:
+            verified.set()
+            assert release_repair.wait(timeout=2)
+
+    def append() -> None:
+        append_started.set()
+        append_sink._record_sync(_event("fresh"))
+
+    repair_sink._verify_sync = paused_verify  # type: ignore[method-assign]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        repair = executor.submit(repair_sink.repair_sync)
+        assert verified.wait(timeout=2)
+        appended = executor.submit(append)
+        assert append_started.wait(timeout=2)
+        release_repair.set()
+        assert repair.result(timeout=2)[1] is not None
+        appended.result(timeout=2)
+
+    assert JsonlAuditSink(path).verify_sync() == 1
+    assert len(list(tmp_path.glob("audit.jsonl.corrupt-*"))) == 1

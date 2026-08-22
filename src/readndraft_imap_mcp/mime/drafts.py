@@ -6,6 +6,7 @@ from email import policy
 from email.headerregistry import Address
 from email.message import EmailMessage
 from email.utils import formatdate, getaddresses, make_msgid
+
 from .html import prepare_authored_html
 from .parser import MAX_MESSAGE_BYTES
 

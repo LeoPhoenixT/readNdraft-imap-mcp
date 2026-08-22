@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from html import escape
-from enum import Enum
 import re
+from collections.abc import Iterable
+from enum import Enum
+from html import escape
 from xml.etree.ElementTree import Element
 
 import css_inline
 import nh3
 import tinycss2
 import tinyhtml5
-
 
 SAFE_HTML_TAGS = {
     "a", "abbr", "address", "article", "b", "bdi", "bdo", "blockquote", "body",
@@ -100,7 +99,11 @@ _HTML_NAMESPACE = "http://www.w3.org/1999/xhtml"
 def _local_name(element: Element) -> str | None:
     if not isinstance(element.tag, str):
         return None
-    namespace, separator, name = element.tag[1:].partition("}") if element.tag.startswith("{") else ("", "", element.tag)
+    namespace, separator, name = (
+        element.tag[1:].partition("}")
+        if element.tag.startswith("{")
+        else ("", "", element.tag)
+    )
     if separator and namespace != _HTML_NAMESPACE:
         raise ValueError("unsupported draft HTML namespace")
     return name.casefold()

@@ -3,10 +3,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
-from datetime import datetime, timezone
 
-from readndraft_imap_mcp.broker.accounts import AccountConfig
 from readndraft_imap_mcp.audit import JsonlAuditSink
+from readndraft_imap_mcp.broker.accounts import AccountConfig
 from readndraft_imap_mcp.credentials import KeyringCredentialStore
 from readndraft_imap_mcp.imap import ImapClient
 from readndraft_imap_mcp.platform import AppPaths, current_app_paths
@@ -54,13 +53,10 @@ def _parser() -> argparse.ArgumentParser:
 
 def _repair_audit(paths: AppPaths) -> int:
     sink = JsonlAuditSink(paths.audit_file)
-    try:
-        count = sink.verify_sync()
-    except RuntimeError as exc:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        archive = paths.audit_file.with_name(f"audit.jsonl.corrupt-{stamp}")
-        paths.audit_file.rename(archive)
-        print(f"Audit chain was invalid ({exc}).")
+    count, archive, error = sink.repair_sync()
+    if archive is not None:
+        assert error is not None
+        print(f"Audit chain was invalid ({error}).")
         print(f"Archived the old log to {archive}; a fresh chain starts on the next event.")
         return 0
     print(f"Audit integrity verified: {count} chained events. Nothing to repair.")

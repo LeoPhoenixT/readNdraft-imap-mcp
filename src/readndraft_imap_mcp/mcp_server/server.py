@@ -379,7 +379,9 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
         attachment_names: list[str] | None = None,
         reply_to_message: IdentityOutput | None = None,
     ) -> DraftCreationOutput:
-        """Save a draft; authored HTML permits normal mail layout CSS but rejects remote resources, hidden content, and message-box escapes. Empty paragraphs are preserved. No send capability."""
+        """Save a draft; authored HTML permits normal mail layout CSS but rejects remote
+        resources, hidden content, and message-box escapes. Empty paragraphs are preserved.
+        No send capability."""
         kwargs = dict(
             to=tuple(to),
             cc=tuple(cc or ()),
@@ -416,7 +418,9 @@ def create_server(backend: ReadOnlyBroker) -> FastMCP:
         html_body: str | None = None,
         attachment_names: list[str] | None = None,
     ) -> DraftUpdateOutput:
-        """Replace a draft; authored HTML permits normal mail layout CSS but rejects remote resources, hidden content, and message-box escapes. Empty paragraphs are preserved. No send capability."""
+        """Replace a draft; authored HTML permits normal mail layout CSS but rejects remote
+        resources, hidden content, and message-box escapes. Empty paragraphs are preserved.
+        No send capability."""
         result = await backend.update_draft(
             account_id,
             draft_id,
