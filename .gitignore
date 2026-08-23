@@ -1,6 +1,9 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.ruff_cache/
+.uv-cache/
+.tmp-uv-release-cache/
 .pip-audit-cache/
 .venv/
 dist/
@@ -8,5 +11,7 @@ build/
 *.egg-info/
 .agents/skills/readndraft-release/
 /PLAN.md
+.tmp_local_html_test_last_message.txt
+local_html_email_test_report.txt
 
 

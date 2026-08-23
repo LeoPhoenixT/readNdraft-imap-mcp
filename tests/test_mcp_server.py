@@ -5,11 +5,12 @@ from contextlib import contextmanager
 
 from mcp.shared.memory import create_connected_server_and_client_session
 
+from readndraft_imap_mcp.attachments import InputAttachment, SavedAttachment
 from readndraft_imap_mcp.imap.models import (
     AttachmentMetadata,
     BatchFlagChange,
-    BatchMoveResult,
     BatchMessageContent,
+    BatchMoveResult,
     DraftCreationResult,
     DraftUpdateResult,
     FlagChange,
@@ -22,10 +23,8 @@ from readndraft_imap_mcp.imap.models import (
     SearchResult,
     SearchTarget,
 )
-from readndraft_imap_mcp.mcp_server.server import create_server
 from readndraft_imap_mcp.mcp_server import server as server_module
-from readndraft_imap_mcp.attachments import InputAttachment, SavedAttachment
-
+from readndraft_imap_mcp.mcp_server.server import create_server
 
 IDENTITY = MessageIdentity("personal", "INBOX", "42", "7")
 

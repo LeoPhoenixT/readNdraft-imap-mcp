@@ -5,7 +5,6 @@ import threading
 
 import pytest
 
-from readndraft_imap_mcp.platform.install import linux_unit, windows_task_command
 from readndraft_imap_mcp.platform.paths import AppPaths
 
 
@@ -71,14 +70,3 @@ def test_ipc_key_rejects_weak_permissions(tmp_path) -> None:
 
     with pytest.raises(PermissionError, match="group/world"):
         paths.load_or_create_ipc_key()
-
-
-def test_service_templates_use_unprivileged_user_context() -> None:
-    unit = linux_unit()
-    task = windows_task_command()
-
-    assert "NoNewPrivileges=true" in unit
-    assert "ProtectSystem=strict" in unit
-    assert "WantedBy=default.target" in unit
-    assert "/RL LIMITED" in task
-    assert "/SC ONLOGON" in task

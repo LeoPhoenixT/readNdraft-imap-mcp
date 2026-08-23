@@ -1,6 +1,5 @@
-from pathlib import Path
 import importlib.util
-
+from pathlib import Path
 
 FORBIDDEN_SOURCE_TERMS = (
     "send_email",

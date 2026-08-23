@@ -3,7 +3,6 @@ from __future__ import annotations
 import sys
 from importlib.metadata import Distribution, distributions
 
-
 ALLOWED_EXPRESSIONS = {
     "Apache-2.0",
     "Apache-2.0 OR BSD-2-Clause",

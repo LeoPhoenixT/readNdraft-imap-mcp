@@ -15,7 +15,6 @@ from readndraft_imap_mcp.imap.models import (
     SearchFilters,
 )
 
-
 IDENTITY = MessageIdentity("personal", "INBOX", "42", "7")
 
 
@@ -234,8 +233,9 @@ def test_large_mutation_batch_has_no_runtime_approval(tmp_path) -> None:
 
 
 def test_public_mcp_schema_has_no_approval_id() -> None:
-    from readndraft_imap_mcp.mcp_server.server import create_server
     from test_mcp_server import FakeBroker
+
+    from readndraft_imap_mcp.mcp_server.server import create_server
 
     schemas = repr(
         [tool.parameters for tool in create_server(FakeBroker())._tool_manager._tools.values()]

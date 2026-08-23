@@ -8,13 +8,12 @@ import pytest
 
 from readndraft_imap_mcp.cli import main
 from readndraft_imap_mcp.platform.paths import AppPaths
-from readndraft_imap_mcp.platform.setup import _print_client_setup, run_setup
-from readndraft_imap_mcp.platform.skill import (
-    SKILL_NAMES,
-    install_all_skills,
-    install_skill,
-    skill_status,
-    uninstall_skill,
+from readndraft_imap_mcp.platform.setup import (
+    _print_client_setup,
+    run_setup,
+)
+from readndraft_imap_mcp.platform.setup import (
+    main as setup_main,
 )
 
 
@@ -60,13 +59,24 @@ def test_unified_help_has_public_commands(capsys) -> None:
         "account",
         "configure",
         "doctor",
-        "skill",
-        "update",
         "migrate-plugin",
         "attachments",
         "mcp",
     ):
         assert command in output
+    assert "  skill " not in output
+    assert "  update " not in output
+
+
+@pytest.mark.parametrize("command", ["skill", "update"])
+def test_removed_compatibility_commands_are_unknown(command, capsys) -> None:
+    assert main([command]) == 2
+    assert f"Unknown command: {command}" in capsys.readouterr().err
+
+
+def test_removed_setup_install_skill_option_is_rejected() -> None:
+    with pytest.raises(SystemExit, match="2"):
+        setup_main(["--install-skill"])
 
 
 def test_setup_authenticates_then_persists_secret_and_metadata(tmp_path) -> None:
@@ -98,75 +108,3 @@ def test_setup_points_codex_to_native_plugin(capsys) -> None:
     assert "client's native plugin manager" in output
     assert "COPY START" not in output
     assert "uvx readndraft-imap-mcp@latest doctor --online" in output
-
-
-def test_skill_install_is_managed_and_refuses_modified_removal(tmp_path) -> None:
-    paths = _paths(tmp_path)
-    home = (tmp_path / "home").resolve()
-    target = install_skill("codex", paths=paths, home=home)
-    assert target == home / ".agents" / "skills" / "readndraft-email"
-    assert (target / "SKILL.md").is_file()
-
-    (target / "SKILL.md").write_text("modified", encoding="utf-8")
-    with pytest.raises(RuntimeError, match="modified"):
-        uninstall_skill("codex", paths=paths, home=home)
-
-
-def test_skill_install_and_clean_uninstall(tmp_path) -> None:
-    paths = _paths(tmp_path)
-    home = (tmp_path / "home").resolve()
-    target = install_skill("claude-code", paths=paths, home=home)
-    uninstall_skill("claude-code", paths=paths, home=home)
-    assert not target.exists()
-
-
-def test_all_packaged_skills_install_to_client_specific_personal_directory(tmp_path) -> None:
-    paths = _paths(tmp_path)
-    home = (tmp_path / "home").resolve()
-
-    targets = install_all_skills("codex", paths=paths, home=home)
-
-    assert tuple(path.name for path in targets) == SKILL_NAMES
-    assert all((path / "SKILL.md").is_file() for path in targets)
-    assert targets[0].parent == home / ".agents" / "skills"
-
-
-def test_forced_skill_upgrade_removes_stale_orphan_files(tmp_path) -> None:
-    paths = _paths(tmp_path)
-    home = (tmp_path / "home").resolve()
-    target = install_skill("claude-code", paths=paths, home=home)
-    orphan = target / "references" / "approvals-and-errors.md"
-    orphan.write_text("stale approval workflow", encoding="utf-8")
-
-    assert skill_status("claude-code", paths=paths, home=home)[0] == "modified"
-    install_skill("claude-code", paths=paths, home=home, force=True)
-
-    assert not orphan.exists()
-    assert skill_status("claude-code", paths=paths, home=home)[0] == "current"
-
-
-def test_non_directory_skill_target_is_unmanaged_and_requires_force(tmp_path) -> None:
-    paths = _paths(tmp_path)
-    home = (tmp_path / "home").resolve()
-    target = home / ".agents" / "skills" / "readndraft-update"
-    target.parent.mkdir(parents=True)
-    target.write_text("not a managed skill directory", encoding="utf-8")
-
-    assert skill_status(
-        "codex", paths=paths, home=home, skill_name="readndraft-update"
-    )[0] == "unmanaged"
-    with pytest.raises(FileExistsError, match="refusing to overwrite"):
-        install_skill(
-            "codex",
-            paths=paths,
-            home=home,
-            skill_name="readndraft-update",
-        )
-    install_skill(
-        "codex",
-        paths=paths,
-        home=home,
-        skill_name="readndraft-update",
-        force=True,
-    )
-    assert target.is_dir()

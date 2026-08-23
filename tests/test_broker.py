@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 from readndraft_imap_mcp import __version__
-
 from readndraft_imap_mcp.broker import (
     BrokerService,
     HealthRequest,
@@ -12,6 +10,7 @@ from readndraft_imap_mcp.broker import (
     decode_request,
 )
 from readndraft_imap_mcp.broker.service import _mutation_spec, _reply_thread
+from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
 
 def test_reply_thread_normalizes_references_and_rejects_invalid_source() -> None:

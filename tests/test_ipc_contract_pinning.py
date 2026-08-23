@@ -1,7 +1,7 @@
 import json
 from hashlib import sha256
 
-from readndraft_imap_mcp.ipc.rpc import ALLOWED_OPERATIONS, _PARAMETERS
+from readndraft_imap_mcp.ipc.rpc import _PARAMETERS, ALLOWED_OPERATIONS
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
 # Bump IPC_PROTOCOL_VERSION and re-pin BOTH values below whenever the IPC

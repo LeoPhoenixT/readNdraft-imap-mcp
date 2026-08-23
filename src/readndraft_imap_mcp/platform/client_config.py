@@ -65,15 +65,21 @@ def uvx_invocation(version: str | None = None) -> tuple[str, list[str]]:
     return command, [f"readndraft-imap-mcp@{installed}", "mcp"]
 
 
-def client_config(client: str, *, uvx: bool, on_demand: bool = False) -> str:
+def client_config(
+    client: str,
+    *,
+    uvx: bool,
+    on_demand: bool = False,
+    command: str | None = None,
+) -> str:
     if uvx:
-        command, args = uvx_invocation()
+        selected_command, args = uvx_invocation()
     else:
         executable = "readndraft-launch" if on_demand else "readndraft-mcp"
-        command, args = resolve_command(executable=executable), []
+        selected_command, args = resolve_command(command, executable=executable), []
     if client == "claude-code":
-        return claude_code_config(command, args)
-    return codex_config(command, args, startup_timeout=30 if uvx else 10)
+        return claude_code_config(selected_command, args)
+    return codex_config(selected_command, args, startup_timeout=30 if uvx else 10)
 
 
 def main(argv: list[str] | None = None, *, default_uvx: bool = False) -> int:
@@ -100,23 +106,15 @@ def main(argv: list[str] | None = None, *, default_uvx: bool = False) -> int:
     args = parser.parse_args(argv)
     if args.uvx and args.command:
         parser.error("--command cannot be combined with --uvx")
-    if args.uvx:
-        command, command_args = uvx_invocation()
-    else:
-        executable = "readndraft-launch" if args.on_demand else "readndraft-mcp"
-        command = resolve_command(args.command, executable=executable)
-        command_args = []
-    if args.client == "claude-code":
-        print(claude_code_config(command, command_args), end="")
-    else:
-        print(
-            codex_config(
-                command,
-                command_args,
-                startup_timeout=30 if args.uvx else 10,
-            ),
-            end="",
-        )
+    print(
+        client_config(
+            args.client,
+            uvx=args.uvx,
+            on_demand=args.on_demand,
+            command=args.command,
+        ),
+        end="",
+    )
     return 0
 
 

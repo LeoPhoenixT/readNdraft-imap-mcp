@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from readndraft_imap_mcp.broker.limits import RequestQuotaError
 from readndraft_imap_mcp import __version__
+from readndraft_imap_mcp.broker.limits import RequestQuotaError
 from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
 from readndraft_imap_mcp.imap.models import (
     BatchMoveResult,
@@ -150,7 +150,18 @@ def test_rpc_parameter_rejection_echoes_valid_request_id() -> None:
 def test_rpc_rejects_type_confused_writes() -> None:
     server = BrokerRpcServer(FakeBroker(), "unused", b"x")
     for operation, params in (
-        ("set_star", {"identity": {"account_id": "a", "mailbox": "INBOX", "uid_validity": "1", "uid": "2"}, "enabled": "false"}),
+        (
+            "set_star",
+            {
+                "identity": {
+                    "account_id": "a",
+                    "mailbox": "INBOX",
+                    "uid_validity": "1",
+                    "uid": "2",
+                },
+                "enabled": "false",
+            },
+        ),
         ("create_draft", {"account_id": "a", "to": "x@example.com", "subject": "s", "body": "b"}),
         ("create_draft", {"account_id": "a", "to": ["x@example.com"], "subject": "s", "body": "b", "html_body": 7}),
     ):
@@ -161,14 +172,20 @@ def test_rpc_rejects_type_confused_writes() -> None:
 
 def test_rpc_accepts_optional_html_body() -> None:
     base = {"account_id": "a", "to": ["x@example.com"], "subject": "s", "body": "b"}
-    assert _decode_request(_frame("create_draft", {**base, "html_body": "<p>b</p>"}))["params"]["html_body"] == "<p>b</p>"
+    decoded = _decode_request(
+        _frame("create_draft", {**base, "html_body": "<p>b</p>"})
+    )
+    assert decoded["params"]["html_body"] == "<p>b</p>"
     assert _decode_request(_frame("create_draft", {**base, "html_body": None}))["params"]["html_body"] is None
 
 
 def test_rpc_accepts_only_a_complete_reply_identity() -> None:
     base = {"account_id": "a", "to": ["x@example.com"], "subject": "s", "body": "b"}
     identity = {"account_id": "a", "mailbox": "INBOX", "uid_validity": "1", "uid": "2"}
-    assert _decode_request(_frame("create_draft", {**base, "reply_to_message": identity}))["params"]["reply_to_message"] == identity
+    decoded = _decode_request(
+        _frame("create_draft", {**base, "reply_to_message": identity})
+    )
+    assert decoded["params"]["reply_to_message"] == identity
     with pytest.raises(ValueError, match="invalid message identity"):
         _decode_request(_frame("create_draft", {**base, "reply_to_message": {"account_id": "a"}}))
 

@@ -13,7 +13,6 @@ from readndraft_imap_mcp.imap.client import (
 )
 from readndraft_imap_mcp.imap.models import MessageIdentity, MoveResult
 
-
 IDENTITY = MessageIdentity("personal", "INBOX", "42", "7")
 
 

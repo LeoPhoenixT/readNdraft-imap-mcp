@@ -224,8 +224,8 @@ entry, and that entry can override the plugin. First run the one-time migration
 for the client you previously configured:
 
 ```console
-uvx readndraft-imap-mcp@0.7.1 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.7.1 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.8.0 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.8.0 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been
@@ -234,10 +234,6 @@ refuses unknown/custom MCP entries and modified or unmanaged skills. It never
 touches accounts, OS keyring credentials, audit history, attachments, drafts,
 or old `update-backups`. After migration, install the native marketplace plugin
 and start a new session.
-
-The `skill` and `update` commands and the `readndraft-update` skill remain in
-0.4.0 only as a deprecated bridge for existing installations. New installations
-must use the client-native plugin lifecycle.
 
 ## Authorization boundary
 
@@ -280,8 +276,6 @@ uvx readndraft-imap-mcp@latest doctor --online
 ```
 
 Account metadata and OS credentials remain independent of the plugin lifecycle.
-The legacy `readndraft-imap-mcp update` command is deprecated in this bridge
-release and should be used only to prepare an old installation for migration.
 
 ## Uninstalling
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from email.message import EmailMessage
 import random
+from email.message import EmailMessage
 
 import pytest
 

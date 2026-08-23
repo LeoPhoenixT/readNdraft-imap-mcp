@@ -11,6 +11,13 @@ from readndraft_imap_mcp.mime.drafts import (
     build_draft_message,
     prepare_draft,
 )
+from readndraft_imap_mcp.mime.html import (
+    AUTHORED_POLICY,
+    INBOUND_POLICY,
+    AuthoredHtmlError,
+    prepare_html,
+    sanitize_inbound_html,
+)
 
 
 @pytest.mark.parametrize("sender_name", ["Display Name", "山田太郎"])
@@ -30,13 +37,6 @@ def test_sender_without_display_name_remains_address_only() -> None:
     parsed = BytesParser(policy=policy.default).parsebytes(raw)
     assert parsed["From"].addresses[0].display_name == ""
     assert parsed["From"].addresses[0].addr_spec == "user@example.com"
-from readndraft_imap_mcp.mime.html import (
-    AUTHORED_POLICY,
-    AuthoredHtmlError,
-    INBOUND_POLICY,
-    prepare_html,
-    sanitize_inbound_html,
-)
 
 
 def test_generated_draft_preserves_client_editable_fields_and_attachment(tmp_path) -> None:
@@ -88,14 +88,28 @@ def test_named_recipients_are_preserved_as_mailboxes() -> None:
     assert message["Bcc"].addresses[0].display_name == "Private"
 
 
-@pytest.mark.parametrize("value", ["a@example.com, b@example.com", "Team: a@example.com;", "<@old-route:a@example.com>", "a@example.com\r\nBcc: x@example.com"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "a@example.com, b@example.com",
+        "Team: a@example.com;",
+        "<@old-route:a@example.com>",
+        "a@example.com\r\nBcc: x@example.com",
+    ],
+)
 def test_recipient_entry_must_contain_exactly_one_safe_mailbox(value: str) -> None:
     with pytest.raises(ValueError, match="invalid To address|line breaks"):
         prepare_draft(to=(value,), subject="Hello", body="Body")
 
 
 def test_reply_headers_are_emitted() -> None:
-    draft = prepare_draft(to=("reader@example.com",), subject="Hello", body="Body", in_reply_to="<source@example.com>", references=("<root@example.com>", "<source@example.com>"))
+    draft = prepare_draft(
+        to=("reader@example.com",),
+        subject="Hello",
+        body="Body",
+        in_reply_to="<source@example.com>",
+        references=("<root@example.com>", "<source@example.com>"),
+    )
     raw, _ = build_draft_message("owner@example.com", draft)
     message = BytesParser(policy=policy.default).parsebytes(raw)
     assert str(message["In-Reply-To"]) == "<source@example.com>"
