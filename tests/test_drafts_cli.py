@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from readndraft_imap_mcp.drafts import FileDraftStore
-from readndraft_imap_mcp.drafts import cli
+from readndraft_imap_mcp.drafts import FileDraftStore, cli
 
 
 class Accounts:
@@ -24,7 +23,13 @@ def _records(tmp_path, monkeypatch):
         )
         for uid in (10, 20, 30)
     )
-    monkeypatch.setattr(cli, "current_app_paths", lambda: SimpleNamespace(draft_dir=directory, accounts_file=tmp_path / "accounts.json"))
+    monkeypatch.setattr(
+        cli,
+        "current_app_paths",
+        lambda: SimpleNamespace(
+            draft_dir=directory, accounts_file=tmp_path / "accounts.json"
+        ),
+    )
     monkeypatch.setattr(cli, "AccountFile", Accounts)
     monkeypatch.setattr(cli, "KeyringCredentialStore", lambda: object())
     return store, records

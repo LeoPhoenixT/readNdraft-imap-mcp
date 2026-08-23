@@ -6,12 +6,13 @@ import shutil
 import tomllib
 
 import pytest
-import readndraft_imap_mcp.platform.client_config as client_config_module
 
+import readndraft_imap_mcp.platform.client_config as client_config_module
 from readndraft_imap_mcp.platform.client_config import (
-    client_config,
     claude_code_config,
+    client_config,
     codex_config,
+    main,
     resolve_command,
     uvx_invocation,
 )
@@ -43,6 +44,17 @@ def test_command_resolution_requires_existing_file(tmp_path) -> None:
     assert resolve_command(str(executable)) == str(executable)
     with pytest.raises(ValueError, match="existing absolute"):
         resolve_command(str(tmp_path / "missing"))
+
+
+@pytest.mark.parametrize("client", ["codex", "chatgpt-desktop", "claude-code"])
+def test_cli_and_programmatic_config_are_equivalent(client, tmp_path, capsys) -> None:
+    executable = (tmp_path / "readndraft-mcp").resolve()
+    executable.write_text("placeholder", encoding="utf-8")
+
+    expected = client_config(client, uvx=False, command=str(executable))
+    assert main([client, "--command", str(executable)]) == 0
+
+    assert capsys.readouterr().out == expected
 
 
 def test_on_demand_launcher_is_installed_and_configurable() -> None:

@@ -74,11 +74,6 @@ async def run_setup(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Interactively initialize readNdraft")
     parser.add_argument("--client", choices=("codex", "chatgpt-desktop", "claude-code"))
-    parser.add_argument(
-        "--install-skill",
-        action="store_true",
-        help="legacy compatibility flag; Claude/Codex skills now come from the plugin",
-    )
     args = parser.parse_args(argv)
     if not sys.stdin.isatty():
         print("Setup requires an interactive terminal; redirected input is refused.")
@@ -92,8 +87,6 @@ def main(argv: list[str] | None = None) -> int:
         if client != "skip":
             if client not in {"codex", "chatgpt-desktop", "claude-code"}:
                 raise ValueError("unsupported client")
-            if args.install_skill:
-                print("Warning: --install-skill is deprecated and ignored; install the marketplace plugin instead.")
             _print_client_setup(client)
         else:
             print("\nNext step")

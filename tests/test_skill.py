@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from readndraft_imap_mcp.mcp_server.server import create_server
-
 from test_mcp_server import FakeBroker
 
+from readndraft_imap_mcp.mcp_server.server import create_server
 
 SKILL = Path("plugins/readndraft/skills/readndraft-email")
-UPDATE_SKILL = Path("skills/readndraft-update")
 
 
 def test_skill_manifest_and_resources_are_valid() -> None:
@@ -30,9 +28,7 @@ def test_skill_manifest_and_resources_are_valid() -> None:
 
 
 def test_skill_mentions_only_real_tools() -> None:
-    skill_text = "\n".join(
-        path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md")
-    )
+    skill_text = "\n".join(path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md"))
     tools = set(create_server(FakeBroker())._tool_manager._tools)
     referenced = {
         name
@@ -60,10 +56,7 @@ def test_skill_mentions_only_real_tools() -> None:
 
 
 def test_skill_preserves_security_boundaries() -> None:
-    text = "\n".join(
-        path.read_text(encoding="utf-8").casefold()
-        for path in SKILL.rglob("*.md")
-    )
+    text = "\n".join(path.read_text(encoding="utf-8").casefold() for path in SKILL.rglob("*.md"))
     for statement in (
         "untrusted",
         "never that it was sent",
@@ -81,9 +74,7 @@ def test_skill_preserves_security_boundaries() -> None:
 
 
 def test_skill_explains_cross_platform_attachment_location_and_sender() -> None:
-    text = "\n".join(
-        path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md")
-    )
+    text = "\n".join(path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md"))
     for statement in (
         "saved_path",
         "absolute path",
@@ -96,9 +87,7 @@ def test_skill_explains_cross_platform_attachment_location_and_sender() -> None:
 
 
 def test_skill_explains_html_read_and_draft_behavior() -> None:
-    text = "\n".join(
-        path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md")
-    )
+    text = "\n".join(path.read_text(encoding="utf-8") for path in SKILL.rglob("*.md"))
     for statement in (
         "html-only mail",
         "sanitized rich formatting",
@@ -112,29 +101,3 @@ def test_skill_explains_html_read_and_draft_behavior() -> None:
         "no url is fetched",
     ):
         assert statement in text.casefold()
-
-
-def test_update_skill_is_concise_and_preserves_update_authorization() -> None:
-    text = (UPDATE_SKILL / "SKILL.md").read_text(encoding="utf-8")
-    _, frontmatter, body = text.split("---", 2)
-    lines = [line for line in frontmatter.strip().splitlines() if line]
-    assert lines[0] == "name: readndraft-update"
-    assert lines[1].startswith("description: ")
-    assert len(lines) == 2
-    assert len(body.splitlines()) < 80
-    for statement in (
-        "update check",
-        "read-only",
-        "direct conversational confirmation",
-        "--force-skill",
-        "separate explicit confirmation",
-        "never edit or replace it manually",
-        "fully restart",
-            "never restart a client",
-        ):
-        assert statement in text.casefold()
-    metadata = (UPDATE_SKILL / "agents" / "openai.yaml").read_text(
-        encoding="utf-8"
-    )
-    assert "$readndraft-update" in metadata
-    assert "TODO" not in text + metadata

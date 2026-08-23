@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.0
+
+### Removed
+
+- Removed the deprecated `skill` and `update` commands, direct skill-management
+  APIs, bundled `readndraft-update` skill, and ignored `setup --install-skill`
+  option. Use the client-native marketplace plugin lifecycle instead.
+- Removed the undocumented `readndraft-install` console command and service
+  installer helpers.
+
+### Changed
+
+- Made `migrate-plugin` preserve manifest-less, modified, and otherwise
+  unrecognized legacy skill directories.
+- Stopped embedding marketplace skills in the Python wheel; the shared plugin
+  remains the supported skill distribution.
+
 ## 0.7.1
 
 ### Removed

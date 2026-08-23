@@ -9,8 +9,6 @@ Commands:
   account     add, list, test, enable, disable, rotate, or delete accounts
   configure   print a version-pinned uvx MCP client configuration
   doctor      check local configuration and optional IMAP connectivity
-  skill       install, inspect, or remove the packaged Agent Skill
-  update      check or apply version-pinned client and skill updates
   migrate-plugin remove a recognized legacy Codex/Claude installation
   attachments show or open the fixed attachment exchange directories
   drafts      list, repair, or forget local draft tracking records
@@ -36,10 +34,6 @@ def main(argv: list[str] | None = None) -> int:
         return configure_main(rest, default_uvx=True)
     elif command == "doctor":
         from readndraft_imap_mcp.platform.doctor import main as target
-    elif command == "skill":
-        from readndraft_imap_mcp.platform.skill import main as target
-    elif command == "update":
-        from readndraft_imap_mcp.platform.update import main as target
     elif command == "migrate-plugin":
         from readndraft_imap_mcp.platform.plugin_migration import main as target
     elif command == "attachments":

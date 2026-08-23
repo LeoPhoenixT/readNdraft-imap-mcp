@@ -16,7 +16,7 @@ _SPEC.loader.exec_module(_RELEASE_CHECK)
 
 
 def test_release_accepts_approved_license() -> None:
-    assert _RELEASE_CHECK.errors_for("v0.7.1") == []
+    assert _RELEASE_CHECK.errors_for("v0.8.0") == []
 
 
 def test_release_workflow_uses_version_merge_sha_and_separates_publish() -> None:
@@ -60,7 +60,7 @@ def test_testpypi_workflow_requires_exact_candidate_sha() -> None:
     assert "testpypi-dist-${{ needs.prepare.outputs.sha }}" in text
 
 
-def test_built_distributions_contain_unified_cli_and_skills(tmp_path) -> None:
+def test_built_distributions_contain_unified_cli_and_plugin_skill(tmp_path) -> None:
     subprocess.run(
         ["uv", "build", "--no-sources", "--out-dir", str(tmp_path)],
         check=True,
@@ -70,14 +70,14 @@ def test_built_distributions_contain_unified_cli_and_skills(tmp_path) -> None:
     assert len(wheels) == 1 and len(sdists) == 1
     with zipfile.ZipFile(wheels[0]) as archive:
         names = set(archive.namelist())
-        assert "readndraft_imap_mcp/_skills/readndraft-email/SKILL.md" in names
-        assert "readndraft_imap_mcp/_skills/readndraft-update/SKILL.md" in names
+        assert not any("readndraft_imap_mcp/_skills/" in name for name in names)
         assert any(name.endswith("/licenses/LICENSE") for name in names)
         assert any(name.endswith("/licenses/THIRD_PARTY_NOTICES.md") for name in names)
         entry_points = next(name for name in names if name.endswith("entry_points.txt"))
         entry_point_text = archive.read(entry_points).decode("utf-8")
         assert "[console_scripts]" in entry_point_text
         assert "readndraft-imap-mcp" in entry_point_text
+        assert "readndraft-install" not in entry_point_text
         assert "readndraft-poc" not in entry_point_text
         assert "readndraft-approve" not in entry_point_text
         assert "[gui_scripts]" in entry_point_text
@@ -88,7 +88,7 @@ def test_built_distributions_contain_unified_cli_and_skills(tmp_path) -> None:
         names = set(archive.getnames())
         assert not any("readndraft_imap_mcp/poc/" in name for name in names)
         assert any(name.endswith("/skills/readndraft-email/SKILL.md") for name in names)
-        assert any(name.endswith("/skills/readndraft-update/SKILL.md") for name in names)
+        assert not any(name.endswith("/skills/readndraft-update/SKILL.md") for name in names)
         assert any(name.endswith("/LICENSE") for name in names)
         assert any(name.endswith("/THIRD_PARTY_NOTICES.md") for name in names)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -9,9 +10,10 @@ from pathlib import Path
 import pytest
 
 from readndraft_imap_mcp.platform.paths import AppPaths
-from readndraft_imap_mcp.platform.plugin_migration import migrate_plugin
-from readndraft_imap_mcp.platform.skill import SKILL_NAMES, install_all_skills
-
+from readndraft_imap_mcp.platform.plugin_migration import (
+    LEGACY_SKILL_NAMES,
+    migrate_plugin,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN = ROOT / "plugins" / "readndraft"
@@ -68,6 +70,29 @@ def _paths(tmp_path: Path) -> AppPaths:
     return AppPaths(tmp_path / "config", tmp_path / "state", tmp_path / "runtime")
 
 
+def _digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _install_legacy_skills(home: Path, paths: AppPaths) -> tuple[Path, ...]:
+    targets = tuple(home / ".agents" / "skills" / name for name in LEGACY_SKILL_NAMES)
+    manifest = {}
+    for name, target in zip(LEGACY_SKILL_NAMES, targets, strict=True):
+        target.mkdir(parents=True)
+        (target / "SKILL.md").write_text(f"name: {name}\n", encoding="utf-8")
+        manifest[f"codex:{name}"] = {"path": str(target), "hash": _digest(target)}
+    paths.ensure_private()
+    (paths.state_dir / "skill-installs.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    return targets
+
+
 def _completed(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.CompletedProcess(command, 0, "", "")
 
@@ -111,7 +136,7 @@ def test_migration_refuses_unknown_mcp_without_mutation(tmp_path: Path) -> None:
 def test_migration_refuses_modified_managed_skill_before_mcp_removal(tmp_path: Path) -> None:
     home = tmp_path / "home"
     paths = _paths(tmp_path)
-    targets = install_all_skills("codex", paths=paths, home=home)
+    targets = _install_legacy_skills(home, paths)
     (targets[0] / "SKILL.md").write_text("user modification\n", encoding="utf-8")
     config = home / ".codex" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
@@ -133,7 +158,7 @@ def test_migration_refuses_modified_managed_skill_before_mcp_removal(tmp_path: P
 def test_migration_removes_only_recognized_mcp_and_clean_skills(tmp_path: Path) -> None:
     home = tmp_path / "home"
     paths = _paths(tmp_path)
-    targets = install_all_skills("codex", paths=paths, home=home)
+    targets = _install_legacy_skills(home, paths)
     config = home / ".codex" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(_codex_legacy_config(), encoding="utf-8")
@@ -144,13 +169,37 @@ def test_migration_removes_only_recognized_mcp_and_clean_skills(tmp_path: Path) 
 
     result = migrate_plugin("codex", paths=paths, home=home, runner=runner)
     assert result.mcp_removed is True
-    assert result.skills_removed == SKILL_NAMES
+    assert result.skills_removed == LEGACY_SKILL_NAMES
     assert all(not target.exists() for target in targets)
     assert not (paths.state_dir / "skill-installs.json").exists()
 
     second = migrate_plugin("codex", paths=paths, home=home, runner=runner)
     assert second.mcp_removed is False
     assert second.skills_removed == ()
+
+
+def test_migration_preserves_manifestless_legacy_skill_before_mcp_removal(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    target = home / ".agents" / "skills" / "readndraft-email"
+    target.mkdir(parents=True)
+    (target / "SKILL.md").write_text("unmanaged\n", encoding="utf-8")
+    config = home / ".codex" / "config.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(_codex_legacy_config(), encoding="utf-8")
+    calls: list[list[str]] = []
+
+    with pytest.raises(RuntimeError, match="modified or unmanaged"):
+        migrate_plugin(
+            "codex",
+            paths=_paths(tmp_path),
+            home=home,
+            runner=lambda command: calls.append(command) or _completed(command),
+        )
+
+    assert target.is_dir()
+    assert calls == []
 
 
 def test_claude_migration_uses_native_user_scope_removal(tmp_path: Path) -> None:

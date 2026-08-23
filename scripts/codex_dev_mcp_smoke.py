@@ -14,7 +14,6 @@ from typing import Any, Iterable
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-
 SERVER_NAME = "readndraft_dev"
 SUCCESS_MARKER = "READNDRAFT_DEV_MCP_OK"
 EXPECTED_TOOLS = {

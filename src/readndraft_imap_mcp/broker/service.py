@@ -89,6 +89,32 @@ def _reply_thread(source_id: str, references: str | None) -> tuple[str, tuple[st
     return source[0], normalized
 
 
+def _validate_identity_batch(
+    identities: tuple[MessageIdentity, ...],
+    *,
+    max_items: int,
+    max_accounts: int,
+    exact_accounts: bool = False,
+) -> tuple[tuple[str, ...], dict[str, list[tuple[int, MessageIdentity]]]]:
+    if not identities or len(identities) > max_items:
+        raise ValueError(f"batch must contain between 1 and {max_items} identities")
+    keys = [
+        (item.account_id, item.mailbox, item.uid_validity, item.uid)
+        for item in identities
+    ]
+    if len(set(keys)) != len(keys):
+        raise ValueError("batch identities must be unique")
+    account_ids = tuple(dict.fromkeys(item.account_id for item in identities))
+    if exact_accounts and len(account_ids) != max_accounts:
+        raise ValueError("move batch must belong to exactly one account")
+    if not exact_accounts and len(account_ids) > max_accounts:
+        raise ValueError(f"batch may span at most {max_accounts} accounts")
+    indexed_groups: dict[str, list[tuple[int, MessageIdentity]]] = {}
+    for index, identity in enumerate(identities):
+        indexed_groups.setdefault(identity.account_id, []).append((index, identity))
+    return account_ids, indexed_groups
+
+
 @dataclass(frozen=True, slots=True)
 class BatchItemOutcome(Generic[T]):
     """One bounded batch result with a deliberately non-sensitive error category."""
@@ -469,20 +495,9 @@ class BrokerService:
     async def get_emails(
         self, identities: tuple[MessageIdentity, ...]
     ) -> tuple[BatchMessageContent, ...]:
-        if not identities or len(identities) > 10:
-            raise ValueError("batch must contain between 1 and 10 identities")
-        keys = [
-            (item.account_id, item.mailbox, item.uid_validity, item.uid)
-            for item in identities
-        ]
-        if len(set(keys)) != len(keys):
-            raise ValueError("batch identities must be unique")
-        account_ids = tuple(dict.fromkeys(item.account_id for item in identities))
-        if len(account_ids) > 2:
-            raise ValueError("batch may span at most 2 accounts")
-        indexed_groups: dict[str, list[tuple[int, MessageIdentity]]] = {}
-        for index, identity in enumerate(identities):
-            indexed_groups.setdefault(identity.account_id, []).append((index, identity))
+        account_ids, indexed_groups = _validate_identity_batch(
+            identities, max_items=10, max_accounts=2
+        )
 
         budget_lock = threading.Lock()
         remaining_source = [MAX_MESSAGE_BYTES]
@@ -911,20 +926,9 @@ class BrokerService:
         if self._audit is None:
             raise AuditUnavailableError("audit sink is required for mutations")
         method_name, state_flag = _mutation_spec(operation)
-        if not identities or len(identities) > 50:
-            raise ValueError("batch must contain between 1 and 50 identities")
-        keys = [
-            (item.account_id, item.mailbox, item.uid_validity, item.uid)
-            for item in identities
-        ]
-        if len(set(keys)) != len(keys):
-            raise ValueError("batch identities must be unique")
-        account_ids = tuple(dict.fromkeys(item.account_id for item in identities))
-        if len(account_ids) > 3:
-            raise ValueError("batch may span at most 3 accounts")
-        indexed_groups: dict[str, list[tuple[int, MessageIdentity]]] = {}
-        for index, identity in enumerate(identities):
-            indexed_groups.setdefault(identity.account_id, []).append((index, identity))
+        account_ids, indexed_groups = _validate_identity_batch(
+            identities, max_items=50, max_accounts=3
+        )
 
         async def run_account(account_id: str, indexed):
             account_items = tuple(identity for _, identity in indexed)
@@ -1055,18 +1059,10 @@ class BrokerService:
     ) -> tuple[BatchMoveResult, ...]:
         if self._audit is None:
             raise AuditUnavailableError("audit sink is required for mutations")
-        if not identities or len(identities) > 50:
-            raise ValueError("batch must contain between 1 and 50 identities")
-        keys = [
-            (item.account_id, item.mailbox, item.uid_validity, item.uid)
-            for item in identities
-        ]
-        if len(set(keys)) != len(keys):
-            raise ValueError("batch identities must be unique")
-        account_ids = {item.account_id for item in identities}
-        if len(account_ids) != 1:
-            raise ValueError("move batch must belong to exactly one account")
-        account_id = identities[0].account_id
+        account_ids, _ = _validate_identity_batch(
+            identities, max_items=50, max_accounts=1, exact_accounts=True
+        )
+        account_id = account_ids[0]
         started = perf_counter()
         try:
             outcomes = await self._batch_client_call(
