@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import secrets
 import socket
 import stat
@@ -348,6 +349,9 @@ class BrokerRpcServer:
                 "status": "healthy",
                 "protocol_version": IPC_PROTOCOL_VERSION,
                 "package_version": __version__,
+                "python_version": platform.python_version(),
+                "python_implementation": platform.python_implementation(),
+                "pid": os.getpid(),
             }
         if operation == "shutdown":
             threading.Thread(
@@ -450,9 +454,16 @@ class BrokerRpcServer:
         raise ValueError("operation is not allowed")
 
     def _graceful_shutdown(self) -> None:
-        if self._shutdown.wait(self.shutdown_grace_seconds):
-            return
-        self.request_shutdown()
+        deadline = time.monotonic() + self.shutdown_grace_seconds
+        while not self._shutdown.is_set():
+            # The shutdown RPC itself is the sole active client when no work or
+            # frontend lease needs draining, so an explicit stop can be prompt.
+            with self._state_lock:
+                can_stop = self._active_clients <= 1
+            if can_stop or time.monotonic() >= deadline:
+                self.request_shutdown()
+                return
+            self._shutdown.wait(0.05)
 
     def handle_frame(self, raw: bytes) -> bytes:
         request_id = None

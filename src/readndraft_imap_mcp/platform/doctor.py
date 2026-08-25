@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import platform
+import sys
 from importlib.metadata import PackageNotFoundError, version
 
 from readndraft_imap_mcp import __version__
@@ -12,13 +14,36 @@ from readndraft_imap_mcp.credentials import KeyringCredentialStore
 from readndraft_imap_mcp.credentials.backend import inspect_backend
 from readndraft_imap_mcp.imap import ImapClient
 
+from .broker_compatibility import broker_compatibility
 from .launcher import broker_health
 from .paths import current_app_paths
+
+
+def _broker_diagnostic(broker: dict[str, object]) -> tuple[bool, str]:
+    compatibility = broker_compatibility(broker)
+    broker_version = str(broker.get("package_version", "unknown"))
+    broker_python = str(broker.get("python_version", "unknown"))
+    implementation = str(broker.get("python_implementation", "unknown"))
+    pid = broker.get("pid", "unknown")
+    return compatibility.compatible, (
+        f"running; PID {pid}; readNdraft {broker_version}; "
+        f"Python {broker_python} ({implementation}); compatible "
+        f"{'YES' if compatibility.compatible else 'NO'}; {compatibility.reason}"
+    )
 
 
 async def _doctor(online: bool) -> list[tuple[str, bool, str]]:
     paths = current_app_paths()
     checks: list[tuple[str, bool, str]] = []
+    checks.append(("frontend readNdraft", True, __version__))
+    checks.append(
+        (
+            "frontend Python",
+            True,
+            f"{platform.python_version()} ({platform.python_implementation()})",
+        )
+    )
+    checks.append(("frontend executable", True, sys.executable))
     paths.ensure_private()
     paths.load_or_create_ipc_key()
     private = os.name == "nt" or all(
@@ -66,15 +91,8 @@ async def _doctor(online: bool) -> list[tuple[str, bool, str]]:
     if broker is None:
         checks.append(("broker state", True, "not running (normal for on-demand mode)"))
     else:
-        frontend_version = __version__
-        broker_version = str(broker.get("package_version", "unknown"))
-        checks.append(
-            (
-                "broker state",
-                broker_version == frontend_version,
-                f"healthy; package {broker_version} (frontend {frontend_version})",
-            )
-        )
+        compatible, detail = _broker_diagnostic(broker)
+        checks.append(("broker state", compatible, detail))
     return checks
 
 

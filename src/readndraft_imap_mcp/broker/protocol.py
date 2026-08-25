@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import platform
 from dataclasses import asdict, dataclass
 from typing import Literal, TypeAlias
 
@@ -22,6 +24,9 @@ class HealthResponse:
     status: Literal["healthy"] = "healthy"
     protocol_version: int = IPC_PROTOCOL_VERSION
     package_version: str = __version__
+    python_version: str = platform.python_version()
+    python_implementation: str = platform.python_implementation()
+    pid: int = os.getpid()
 
     def to_dict(self) -> dict[str, str | bool | int]:
         return asdict(self)

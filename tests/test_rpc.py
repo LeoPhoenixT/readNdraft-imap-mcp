@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import platform
 import threading
 import time
 from pathlib import Path
@@ -57,6 +59,9 @@ def test_rpc_health_and_account_list_are_json_only() -> None:
     assert health["result"]["status"] == "healthy"
     assert health["result"]["protocol_version"] == IPC_PROTOCOL_VERSION
     assert health["result"]["package_version"] == __version__
+    assert health["result"]["python_version"] == platform.python_version()
+    assert health["result"]["python_implementation"] == platform.python_implementation()
+    assert health["result"]["pid"] == os.getpid()
     assert accounts["result"][0]["id"] == "personal"
 
 

@@ -44,12 +44,13 @@ def _stop_broker() -> int:
 
 
 def main(argv: list[str] | None = None) -> int | None:
-    if argv == ["stop"]:
-        return _stop_broker()
     parser = argparse.ArgumentParser(description="Run the local readNdraft broker")
+    parser.add_argument("command", nargs="?", choices=("run", "stop"), default="run")
     parser.add_argument("--idle-timeout", type=float)
     parser.add_argument("--shutdown-grace", type=float, default=10)
     args = parser.parse_args(argv)
+    if args.command == "stop":
+        return _stop_broker()
     if args.idle_timeout is not None and args.idle_timeout <= 0:
         parser.error("--idle-timeout must be positive")
     if args.shutdown_grace < 0:

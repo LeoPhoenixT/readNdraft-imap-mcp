@@ -4,6 +4,8 @@ import asyncio
 from email import policy
 from email.parser import BytesParser
 
+import pytest
+
 from readndraft_imap_mcp.broker import AccountConfig, AccountRegistry, BrokerService
 from readndraft_imap_mcp.drafts import FileDraftStore
 from readndraft_imap_mcp.imap.models import (
@@ -141,6 +143,65 @@ def test_draft_creation_and_update_have_no_runtime_approval(tmp_path) -> None:
         "update_draft",
     ]
     assert all(event.approval_required is False for event in audit.events)
+
+
+def test_create_draft_build_failure_is_audited_without_content(tmp_path, monkeypatch) -> None:
+    audit = Audit()
+    broker = build_broker(tmp_path, audit)
+    monkeypatch.setattr(
+        broker, "_build_draft",
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("secret body /private/path")),
+    )
+
+    with pytest.raises(ValueError, match="secret body"):
+        asyncio.run(
+            broker.create_draft(
+                "personal", to=("sensitive@example.com",),
+                subject="private subject", body="secret body",
+            )
+        )
+
+    event = audit.events[-1]
+    assert (event.success, event.stage, event.request_size, event.error_category) == (
+        False, "draft_build", 0, "ValueError",
+    )
+    serialized = repr(event.to_dict())
+    assert "sensitive@example.com" not in serialized
+    assert "private subject" not in serialized
+    assert "secret body" not in serialized
+    assert "/private/path" not in serialized
+
+
+def test_update_draft_build_failure_is_audited_without_content(tmp_path, monkeypatch) -> None:
+    audit = Audit()
+    broker = build_broker(tmp_path, audit)
+    created = asyncio.run(
+        broker.create_draft(
+            "personal", to=("recipient@example.com",), subject="draft", body="first",
+        )
+    )
+    audit.events.clear()
+    monkeypatch.setattr(
+        broker, "_build_draft",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("private update")),
+    )
+
+    with pytest.raises(RuntimeError, match="private update"):
+        asyncio.run(
+            broker.update_draft(
+                "personal", created.draft_id, to=("hidden@example.com",),
+                subject="hidden subject", body="private update",
+            )
+        )
+
+    event = audit.events[-1]
+    assert (event.success, event.stage, event.request_size, event.error_category) == (
+        False, "draft_build", 0, "RuntimeError",
+    )
+    serialized = repr(event.to_dict())
+    assert "hidden@example.com" not in serialized
+    assert "hidden subject" not in serialized
+    assert "private update" not in serialized
 
 
 def test_broker_adds_updates_and_removes_html_without_changing_message_id(tmp_path) -> None:

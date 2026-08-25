@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "readndraft-imap-mcp"
-version = "0.8.0"
+version = "0.8.1"
 description = "Capability-minimized IMAP MCP service"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12.6"
 license = "Apache-2.0"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 authors = [{ name = "LeoPhoenixT" }]

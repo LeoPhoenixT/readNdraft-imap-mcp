@@ -68,6 +68,15 @@ def test_unified_help_has_public_commands(capsys) -> None:
     assert "  update " not in output
 
 
+def test_top_level_broker_stop_is_dispatched(monkeypatch) -> None:
+    from readndraft_imap_mcp.broker import daemon
+
+    stops = []
+    monkeypatch.setattr(daemon, "_stop_broker", lambda: stops.append(True) or 0)
+    assert main(["broker", "stop"]) == 0
+    assert stops == [True]
+
+
 @pytest.mark.parametrize("command", ["skill", "update"])
 def test_removed_compatibility_commands_are_unknown(command, capsys) -> None:
     assert main([command]) == 2
