@@ -27,6 +27,7 @@ class AuditEvent:
     destination_uid_validity: str | None = None
     destination_uid: str | None = None
     movement_method: Literal["uid_move", "uidplus_copy_delete"] | None = None
+    stage: Literal["draft_build", "imap_append", "provenance_write"] | None = None
 
     @classmethod
     def mutation(
@@ -108,6 +109,7 @@ class AuditEvent:
         duration_ms: int,
         error_category: str | None = None,
         client_id: str | None = None,
+        stage: Literal["draft_build", "imap_append", "provenance_write"] | None = None,
     ) -> "AuditEvent":
         return cls(
             timestamp=datetime.now(UTC).isoformat(),
@@ -122,6 +124,7 @@ class AuditEvent:
             duration_ms=max(0, duration_ms),
             error_category=error_category,
             client_id=client_id,
+            stage=stage,
         )
 
     @classmethod
@@ -136,6 +139,7 @@ class AuditEvent:
         duration_ms: int,
         error_category: str | None = None,
         client_id: str | None = None,
+        stage: Literal["draft_build", "imap_append", "provenance_write"] | None = None,
     ) -> "AuditEvent":
         return cls(
             timestamp=datetime.now(UTC).isoformat(),
@@ -150,6 +154,7 @@ class AuditEvent:
             duration_ms=max(0, duration_ms),
             error_category=error_category,
             client_id=client_id,
+            stage=stage,
         )
 
     def to_dict(self) -> dict:

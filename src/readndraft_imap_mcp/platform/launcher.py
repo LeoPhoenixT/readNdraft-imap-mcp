@@ -11,11 +11,10 @@ from pathlib import Path
 from types import TracebackType
 from typing import Callable
 
-from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.audit import JsonlAuditSink
 from readndraft_imap_mcp.ipc import IpcBrokerClient
-from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
+from .broker_compatibility import broker_compatibility
 from .paths import AppPaths, current_app_paths
 
 DEFAULT_STARTUP_TIMEOUT = 10.0
@@ -131,30 +130,30 @@ def broker_health(paths: AppPaths, timeout: float = 1.0) -> dict[str, object] | 
 def broker_healthy(paths: AppPaths, timeout: float = 1.0) -> bool:
     """Perform a bounded authenticated health check without exposing errors."""
     result = broker_health(paths, timeout)
-    return result is not None and all(
-        result.get(key) == value
-        for key, value in {
-            "ok": True,
-            "status": "healthy",
-            "protocol_version": IPC_PROTOCOL_VERSION,
-            "package_version": __version__,
-        }.items()
-    )
+    return broker_compatibility(result).compatible
 
 
-def retire_stale_broker(paths: AppPaths, timeout: float = 3.0) -> None:
+def _instance_released(paths: AppPaths) -> bool:
+    with StartupLock(paths.broker_instance_lock_file) as lock:
+        return lock.try_acquire()
+
+
+def retire_stale_broker(paths: AppPaths, timeout: float = 10.0) -> bool:
+    """Stop an incompatible broker and wait for endpoint and instance release."""
     result = broker_health(paths)
-    if result is None or result.get("package_version") == __version__:
-        return
-    try:
-        IpcBrokerClient(paths.ipc_address, paths.load_or_create_ipc_key()).shutdown()
-    except Exception:
-        return
+    if result is not None and broker_compatibility(result).compatible:
+        return False
+    if result is not None:
+        try:
+            IpcBrokerClient(paths.ipc_address, paths.load_or_create_ipc_key()).shutdown()
+        except Exception:
+            pass
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if broker_health(paths) is None:
-            return
+        if broker_health(paths) is None and _instance_released(paths):
+            return True
         time.sleep(0.1)
+    return False
 
 
 def start_owned_broker(idle_timeout: float, shutdown_grace: float) -> subprocess.Popen:
@@ -207,8 +206,12 @@ def ensure_broker(
             if lock.try_acquire():
                 if health_check(paths, min(1.0, max(0.1, deadline - time.monotonic()))):
                     return False
-                retire_stale_broker(paths)
+                if not retire_stale_broker(
+                    paths, timeout=shutdown_grace + startup_timeout
+                ):
+                    break
                 starter(idle_timeout, shutdown_grace)
+                deadline = time.monotonic() + startup_timeout
                 while time.monotonic() < deadline:
                     if health_check(
                         paths, min(0.5, max(0.1, deadline - time.monotonic()))

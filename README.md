@@ -224,8 +224,8 @@ entry, and that entry can override the plugin. First run the one-time migration
 for the client you previously configured:
 
 ```console
-uvx readndraft-imap-mcp@0.8.0 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.8.0 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.8.1 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.8.1 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been

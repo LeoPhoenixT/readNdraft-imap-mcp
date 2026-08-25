@@ -144,6 +144,61 @@ def test_version_mismatched_broker_is_retired_before_start(monkeypatch, tmp_path
     assert starts == [(300.0, 10.0)]
 
 
+def test_stale_broker_releases_instance_before_compatible_replacement(monkeypatch, tmp_path) -> None:
+    state = "stale"
+    release_polls = 0
+    events = []
+
+    def health(paths, timeout=1.0):
+        if state == "stale":
+            return {
+                "ok": True,
+                "status": "healthy",
+                "protocol_version": -1,
+                "package_version": __version__,
+                "python_version": "3.12.8",
+                "python_implementation": "CPython",
+                "pid": 10,
+            }
+        return None
+
+    def shutdown(self):
+        nonlocal state
+        events.append("shutdown")
+        state = "stopping"
+
+    def released(paths):
+        nonlocal release_polls, state
+        release_polls += 1
+        if release_polls >= 2:
+            state = "gone"
+            events.append("old gone")
+            return True
+        return False
+
+    def start(idle, grace):
+        nonlocal state
+        assert state == "gone"
+        events.append("replacement start")
+        state = "replacement"
+
+    def compatible_health(paths, timeout):
+        ready = state == "replacement"
+        if ready:
+            events.append("compatible health")
+        return ready
+
+    monkeypatch.setattr(launcher_module, "broker_health", health)
+    monkeypatch.setattr(launcher_module, "_instance_released", released)
+    monkeypatch.setattr(launcher_module.IpcBrokerClient, "shutdown", shutdown)
+
+    assert ensure_broker(
+        _paths(tmp_path), startup_timeout=0.5,
+        health_check=compatible_health, starter=start,
+    ) is True
+    assert events == ["shutdown", "old gone", "replacement start", "compatible health"]
+
+
 def test_same_version_broker_is_not_retired(monkeypatch, tmp_path) -> None:
     shutdowns = []
     starts = []

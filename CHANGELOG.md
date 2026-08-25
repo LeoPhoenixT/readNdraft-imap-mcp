@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.1
+
+### Changed
+
+- Raised the supported runtime to Python 3.12.6 because strict draft-address
+  parsing depends on behavior introduced in that patch release.
+- Added broker Python runtime identity and shared compatibility reporting to
+  authenticated health checks and `doctor` without exposing the executable.
+- Made explicit broker shutdown prompt when no active work needs draining.
+
+### Fixed
+
+- Made both `readndraft-broker stop` and `readndraft-imap-mcp broker stop`
+  invoke the supported broker shutdown command.
+- Waited for an incompatible broker's endpoint and singleton ownership to be
+  fully released before starting and exposing a compatible replacement.
+- Audited draft build and validation failures for both draft creation and
+  updates with a safe failure stage and exception category.
+
 ## 0.8.0
 
 ### Removed

@@ -60,11 +60,21 @@ legacy skills rather than deleting them.
 
 ## Old behavior remains after an upgrade
 
-Current broker endpoints include the IPC protocol version. Reconnect the MCP so
-the launcher starts the matching broker. An older broker on a previous endpoint
-cannot be reused and exits after its leases and idle timeout. If a response still
-mentions `readndraft-approve`, verify the client command points to the updated
-package and run `skill status CLIENT`; the current protocol has no approval ID.
+Reconnect the MCP. The launcher checks the authenticated broker's package, IPC
+protocol, and Python runtime, waits for any incompatible broker to stop and
+release its singleton endpoint, and exposes the MCP frontend only after the
+replacement passes the same compatibility check. Run `doctor` to compare the
+frontend and broker versions, Python runtimes, and compatibility result.
+
+Service-managed installations can stop a broker with either supported command:
+
+```console
+readndraft-broker stop
+readndraft-imap-mcp broker stop
+```
+
+Normal upgrades do not require Python snippets, manual daemon cleanup, or a
+retry after a transient endpoint error.
 
 For repository development, a source edit does not change the IPC protocol
 endpoint. A new `readndraft_dev` frontend can therefore reuse a healthy broker

@@ -641,20 +641,25 @@ class BrokerService:
                 account_id, lambda client: client.get_threading_headers(reply_to_message)
             )
             in_reply_to, references = _reply_thread(source_id, source_references)
-        raw, message_id, draft = self._build_draft(
-            account,
-            to=to,
-            cc=cc,
-            bcc=bcc,
-            subject=subject,
-            body=body,
-            html_body=html_body,
-            attachment_names=attachment_names,
-            in_reply_to=in_reply_to,
-            references=references,
-        )
         started = perf_counter()
+        stage = "draft_build"
+        raw: bytes | None = None
+        mailbox = ""
+        uid = ""
         try:
+            raw, message_id, draft = self._build_draft(
+                account,
+                to=to,
+                cc=cc,
+                bcc=bcc,
+                subject=subject,
+                body=body,
+                html_body=html_body,
+                attachment_names=attachment_names,
+                in_reply_to=in_reply_to,
+                references=references,
+            )
+            stage = "imap_append"
             result = await self._client_call(
                 account_id,
                 lambda client: client.append_draft(
@@ -664,21 +669,9 @@ class BrokerService:
                 ),
                 response_timeout=False,
             )
-        except Exception as exc:
-            await self._audit.record(
-                AuditEvent.draft_creation(
-                    account_id=account_id,
-                    mailbox="",
-                    uid="",
-                    request_size=len(raw),
-                    success=False,
-                    duration_ms=int((perf_counter() - started) * 1000),
-                    error_category=type(exc).__name__,
-                    client_id=client_id,
-                )
-            )
-            raise
-        try:
+            mailbox = result.mailbox
+            uid = result.uid or ""
+            stage = "provenance_write"
             provenance = self._drafts.create(
                 account_id=result.account_id,
                 mailbox=result.mailbox,
@@ -693,13 +686,14 @@ class BrokerService:
             await self._audit.record(
                 AuditEvent.draft_creation(
                     account_id=account_id,
-                    mailbox=result.mailbox,
-                    uid=result.uid or "",
-                    request_size=len(raw),
+                    mailbox=mailbox,
+                    uid=uid,
+                    request_size=len(raw) if raw is not None else 0,
                     success=False,
                     duration_ms=int((perf_counter() - started) * 1000),
                     error_category=type(exc).__name__,
                     client_id=client_id,
+                    stage=stage,
                 )
             )
             raise
@@ -738,21 +732,24 @@ class BrokerService:
         record = self._drafts.get(draft_id, account_id)
         if not record.update_supported:
             raise RuntimeError("draft update is unsupported without stable APPENDUID provenance")
-        raw, message_id, draft = self._build_draft(
-            account,
-            to=to,
-            cc=cc,
-            bcc=bcc,
-            subject=subject,
-            body=body,
-            html_body=html_body,
-            attachment_names=attachment_names,
-            in_reply_to=record.in_reply_to,
-            references=record.references,
-            message_id=record.message_id,
-        )
         started = perf_counter()
+        stage = "draft_build"
+        raw: bytes | None = None
         try:
+            raw, message_id, draft = self._build_draft(
+                account,
+                to=to,
+                cc=cc,
+                bcc=bcc,
+                subject=subject,
+                body=body,
+                html_body=html_body,
+                attachment_names=attachment_names,
+                in_reply_to=record.in_reply_to,
+                references=record.references,
+                message_id=record.message_id,
+            )
+            stage = "imap_append"
             matches = await self._client_call(
                 account_id,
                 lambda client: client.resolve_draft_uid(record),
@@ -802,6 +799,7 @@ class BrokerService:
                 response_timeout=False,
             )
             old_uid = record.uid
+            stage = "provenance_write"
             record = self._drafts.update(
                 record,
                 mailbox=result.mailbox,
@@ -832,11 +830,12 @@ class BrokerService:
                     account_id=account_id,
                     mailbox=record.mailbox,
                     uid=record.uid or "",
-                    request_size=len(raw),
+                    request_size=len(raw) if raw is not None else 0,
                     success=False,
                     duration_ms=int((perf_counter() - started) * 1000),
                     error_category=type(exc).__name__,
                     client_id=client_id,
+                    stage=stage,
                 )
             )
             raise

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import platform
+
 import pytest
 
 from readndraft_imap_mcp import __version__
@@ -29,11 +32,15 @@ def test_mutation_spec_rejects_unknown_operations() -> None:
 
 def test_health_contract_is_restricted_to_health() -> None:
     assert decode_request({"operation": "health"}) == HealthRequest()
-    assert BrokerService().handle({"operation": "health"}) == {
+    health = BrokerService().handle({"operation": "health"})
+    assert health == {
         "ok": True,
         "status": "healthy",
         "protocol_version": IPC_PROTOCOL_VERSION,
         "package_version": __version__,
+        "python_version": platform.python_version(),
+        "python_implementation": platform.python_implementation(),
+        "pid": os.getpid(),
     }
 
 
