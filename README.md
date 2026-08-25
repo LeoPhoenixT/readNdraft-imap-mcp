@@ -31,7 +31,7 @@ runs the published package in an isolated environment.
 Run guided setup in a real interactive terminal:
 
 ```console
-uvx readndraft-imap-mcp@0.7.1 setup
+uvx readndraft-imap-mcp@0.8.1 setup
 ```
 
 This configures only readNdraft's local account, credential, and private state.
@@ -77,7 +77,7 @@ For Claude Code, run these commands inside Claude Code:
 ```
 
 The plugin supplies one shared `readndraft-email` skill and a local stdio MCP
-definition pinned to `readndraft-imap-mcp@0.7.1`. It does not contain secrets,
+definition pinned to `readndraft-imap-mcp@0.8.1`. It does not contain secrets,
 account data, or a send capability.
 
 ### 4. Restart and verify
