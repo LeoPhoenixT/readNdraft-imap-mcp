@@ -103,6 +103,23 @@ class MessageContent:
     flags: tuple[str, ...]
     attachments: tuple[AttachmentMetadata, ...]
     source_size: int = 0
+    text_total_chars: int = 0
+    text_truncated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MailboxBatchResult:
+    account_id: str
+    ok: bool
+    mailboxes: tuple[Mailbox, ...] = ()
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.ok:
+            if self.error is not None:
+                raise ValueError("successful mailbox batch result cannot contain an error")
+        elif self.error is None or self.mailboxes:
+            raise ValueError("failed mailbox batch result requires an error and no mailboxes")
 
 
 @dataclass(frozen=True, slots=True)

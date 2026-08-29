@@ -7,8 +7,8 @@ from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 # Bump IPC_PROTOCOL_VERSION and re-pin BOTH values below whenever the IPC
 # wire contract changes. A stale broker must never be reachable by a newer
 # frontend: the endpoint name is derived from IPC_PROTOCOL_VERSION.
-EXPECTED_PROTOCOL_VERSION = 9
-EXPECTED_CONTRACT_DIGEST = "0422e3e1256f40088da41c0c324815edad008be5354d796671e1d5e437909e88"
+EXPECTED_PROTOCOL_VERSION = 10
+EXPECTED_CONTRACT_DIGEST = "58f8d22c4b49855f8828d3609742656f4b38fbb874eb6d8e72f0a44e38554d38"
 
 
 def _contract_digest() -> str:

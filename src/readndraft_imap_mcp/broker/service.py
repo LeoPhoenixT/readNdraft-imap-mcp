@@ -29,6 +29,7 @@ from readndraft_imap_mcp.imap.models import (
     FlagChange,
     HtmlContent,
     Mailbox,
+    MailboxBatchResult,
     MessageContent,
     MessageIdentity,
     MoveResult,
@@ -59,6 +60,27 @@ _MUTATION_OPERATIONS = {
     "set_star": ("set_star", r"\Flagged"),
     "set_read_state": ("set_read_state", r"\Seen"),
 }
+
+
+def _validate_text_preview(max_text_chars: int | None) -> None:
+    if max_text_chars is not None and (
+        isinstance(max_text_chars, bool) or not 1 <= max_text_chars <= 100_000
+    ):
+        raise ValueError("max_text_chars must be between 1 and 100000")
+
+
+def _truncate_message_text(
+    message: MessageContent, max_text_chars: int | None
+) -> MessageContent:
+    total = len(message.text)
+    if max_text_chars is None or total <= max_text_chars:
+        return replace(message, text_total_chars=total, text_truncated=False)
+    return replace(
+        message,
+        text=message.text[:max_text_chars],
+        text_total_chars=total,
+        text_truncated=True,
+    )
 
 
 def _mutation_spec(operation: str) -> tuple[str, str]:
@@ -318,6 +340,30 @@ class BrokerService:
     async def list_mailboxes(self, account_id: str) -> tuple[Mailbox, ...]:
         return await self._client_call(account_id, lambda client: client.list_mailboxes())
 
+    async def list_mailboxes_batch(
+        self, account_ids: tuple[str, ...]
+    ) -> tuple[MailboxBatchResult, ...]:
+        if not 1 <= len(account_ids) <= 10:
+            raise ValueError("mailbox lookup must contain between 1 and 10 accounts")
+        if len(set(account_ids)) != len(account_ids):
+            raise ValueError("mailbox account ids must be unique")
+
+        async def lookup(account_id: str) -> MailboxBatchResult:
+            try:
+                return MailboxBatchResult(
+                    account_id=account_id,
+                    ok=True,
+                    mailboxes=await self.list_mailboxes(account_id),
+                )
+            except Exception as exc:
+                return MailboxBatchResult(
+                    account_id=account_id, ok=False, error=_batch_error(exc)
+                )
+
+        return tuple(
+            await asyncio.gather(*(lookup(account_id) for account_id in account_ids))
+        )
+
     async def search_emails(
         self,
         account_id: str,
@@ -487,17 +533,22 @@ class BrokerService:
             targets_pending=pending,
         )
 
-    async def get_email(self, identity: MessageIdentity) -> MessageContent:
-        return await self._client_call(
+    async def get_email(
+        self, identity: MessageIdentity, max_text_chars: int | None = None
+    ) -> MessageContent:
+        _validate_text_preview(max_text_chars)
+        message = await self._client_call(
             identity.account_id, lambda client: client.get_message(identity)
         )
+        return _truncate_message_text(message, max_text_chars)
 
     async def get_emails(
-        self, identities: tuple[MessageIdentity, ...]
+        self, identities: tuple[MessageIdentity, ...], max_text_chars: int | None = None
     ) -> tuple[BatchMessageContent, ...]:
         account_ids, indexed_groups = _validate_identity_batch(
             identities, max_items=10, max_accounts=2
         )
+        _validate_text_preview(max_text_chars)
 
         budget_lock = threading.Lock()
         remaining_source = [MAX_MESSAGE_BYTES]
@@ -510,6 +561,7 @@ class BrokerService:
                 with budget_lock:
                     message = client.get_message(identity, remaining_source[0])
                     remaining_source[0] -= message.source_size
+                    message = _truncate_message_text(message, max_text_chars)
                     text_size = len(message.text.encode("utf-8"))
                     if text_size > remaining_text[0]:
                         raise ValueError("batch plain-text response exceeds 2 MB")

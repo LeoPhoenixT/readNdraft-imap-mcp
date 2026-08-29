@@ -3,24 +3,28 @@
 ## Find and read mail
 
 1. Resolve aliases with `list_accounts`.
-2. Resolve exact mailbox names with `list_mailboxes` when needed.
+2. Resolve exact mailbox names with `list_mailboxes(account_ids=[...])` when
+   needed; inspect each ordered account result and continue around isolated errors.
 3. Call `search_emails`; `limit` defaults to 50 and accepts 1-500. A request
-   above 50 requires exactly one account and raw mailbox `name`. Use `fields`
+   above 50 requires exactly one exact `{account_id, mailbox}` target. Use `fields`
    to request only the safe headers needed for a large page.
 4. Show matching metadata when several results are plausible.
-5. Copy one result's complete identity into `get_email`.
+5. Copy one result's complete identity into `get_email` with
+   `max_text_chars: 16000`; use `text_truncated` and `text_total_chars` to decide
+   whether a full-text follow-up is needed.
 
 Search returns `results`, `errors`, `targets_searched`, `targets_pending`,
 `truncated`, `next_cursor`, and `order`. Search pending targets separately when
 complete coverage is required. A single-target error is returned in the same
 page envelope and is not an empty successful search.
-Cursor pagination requires exactly one account and mailbox. Keep every filter
+Cursor pagination requires exactly one target. Keep every filter
 unchanged and pass `next_cursor` into the next call; stop when it is null. Do not
 combine a cursor with another mailbox or deduplicate day-boundary results—the
 cursor already advances below the last UID without overlap.
 
 When the user explicitly asks to read several already-selected messages, call
-`get_emails` with 1-10 complete identities across at most two accounts. Do not
+`get_emails` with 1-10 complete identities across at most two accounts and
+`max_text_chars: 16000`. Do not
 turn broad search results into a speculative read batch. Results remain in input
 order and may contain per-item failures.
 

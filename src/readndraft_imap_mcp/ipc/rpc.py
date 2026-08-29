@@ -32,6 +32,7 @@ from readndraft_imap_mcp.imap.models import (
     FlagChange,
     HtmlContent,
     Mailbox,
+    MailboxBatchResult,
     MessageContent,
     MessageIdentity,
     MoveResult,
@@ -74,7 +75,7 @@ _PARAMETERS = {
     "shutdown": (frozenset(), frozenset()),
     "frontend_lease": (frozenset(), frozenset()),
     "list_accounts": (frozenset(), frozenset()),
-    "list_mailboxes": (frozenset({"account_id"}), frozenset()),
+    "list_mailboxes": (frozenset({"account_ids"}), frozenset()),
     "search_emails": (
         frozenset({"account_id", "mailbox", "filters"}),
         frozenset({"limit"}),
@@ -83,8 +84,8 @@ _PARAMETERS = {
         frozenset({"targets", "filters"}),
         frozenset({"limit", "cursor"}),
     ),
-    "get_email": (frozenset({"identity"}), frozenset()),
-    "get_emails": (frozenset({"identities"}), frozenset()),
+    "get_email": (frozenset({"identity"}), frozenset({"max_text_chars"})),
+    "get_emails": (frozenset({"identities"}), frozenset({"max_text_chars"})),
     "get_email_html": (frozenset({"identity"}), frozenset()),
     "list_attachment_inputs": (frozenset(), frozenset()),
     "save_attachment": (
@@ -241,6 +242,17 @@ def _validate_parameter_types(operation: str, params: dict[str, Any]) -> None:
         isinstance(params["limit"], bool) or not isinstance(params["limit"], int)
     ):
         raise ValueError("invalid RPC parameter type")
+    if "max_text_chars" in params and (
+        params["max_text_chars"] is not None
+        and (
+            isinstance(params["max_text_chars"], bool)
+            or not isinstance(params["max_text_chars"], int)
+            or not 1 <= params["max_text_chars"] <= 100_000
+        )
+    ):
+        raise ValueError("invalid RPC parameter type")
+    if "account_ids" in params and not _string_list(params["account_ids"], maximum=10):
+        raise ValueError("invalid RPC parameter type")
     if "enabled" in params and not isinstance(params["enabled"], bool):
         raise ValueError("invalid RPC parameter type")
     if "identity" in params:
@@ -363,7 +375,12 @@ class BrokerRpcServer:
         if operation == "list_accounts":
             return self.broker.list_accounts()
         if operation == "list_mailboxes":
-            return [asdict(item) for item in await self.broker.list_mailboxes(params["account_id"])]
+            return [
+                asdict(item)
+                for item in await self.broker.list_mailboxes_batch(
+                    tuple(params["account_ids"])
+                )
+            ]
         if operation == "search_emails":
             filters = _filters_from_json(params["filters"])
             return [
@@ -392,12 +409,17 @@ class BrokerRpcServer:
                 )
             )
         if operation == "get_email":
-            return asdict(await self.broker.get_email(_identity(params["identity"])))
+            return asdict(
+                await self.broker.get_email(
+                    _identity(params["identity"]), params.get("max_text_chars")
+                )
+            )
         if operation == "get_emails":
             return [
                 asdict(item)
                 for item in await self.broker.get_emails(
-                    tuple(_identity(value) for value in params["identities"])
+                    tuple(_identity(value) for value in params["identities"]),
+                    params.get("max_text_chars"),
                 )
             ]
         if operation == "get_email_html":
@@ -651,8 +673,18 @@ class IpcBrokerClient:
         finally:
             connection.close()
 
-    async def list_mailboxes(self, account_id):
-        return tuple(Mailbox(**item) for item in await self._request("list_mailboxes", {"account_id": account_id}))
+    async def list_mailboxes_batch(self, account_ids):
+        return tuple(
+            MailboxBatchResult(
+                account_id=item["account_id"],
+                ok=item["ok"],
+                mailboxes=tuple(Mailbox(**mailbox) for mailbox in item["mailboxes"]),
+                error=item["error"],
+            )
+            for item in await self._request(
+                "list_mailboxes", {"account_ids": list(account_ids)}
+            )
+        )
 
     async def search_emails(self, account_id, mailbox, filters, limit=50):
         result = await self._request("search_emails", {
@@ -698,18 +730,27 @@ class IpcBrokerClient:
             ),
         )
 
-    async def get_email(self, identity):
-        item = await self._request("get_email", {"identity": asdict(identity)})
+    async def get_email(self, identity, max_text_chars=None):
+        item = await self._request(
+            "get_email",
+            {"identity": asdict(identity), "max_text_chars": max_text_chars},
+        )
         return MessageContent(
             identity=MessageIdentity(**item["identity"]), headers=item["headers"], text=item["text"],
             flags=tuple(item["flags"]),
             attachments=tuple(AttachmentMetadata(**value) for value in item["attachments"]),
             source_size=item.get("source_size", 0),
+            text_total_chars=item.get("text_total_chars", len(item["text"])),
+            text_truncated=item.get("text_truncated", False),
         )
 
-    async def get_emails(self, identities):
+    async def get_emails(self, identities, max_text_chars=None):
         items = await self._request(
-            "get_emails", {"identities": [asdict(item) for item in identities]}
+            "get_emails",
+            {
+                "identities": [asdict(item) for item in identities],
+                "max_text_chars": max_text_chars,
+            },
         )
         return tuple(_batch_message(item) for item in items)
 
@@ -856,6 +897,8 @@ def _message(item: dict[str, Any]) -> MessageContent:
         flags=tuple(item["flags"]),
         attachments=tuple(AttachmentMetadata(**value) for value in item["attachments"]),
         source_size=item.get("source_size", 0),
+        text_total_chars=item.get("text_total_chars", len(item["text"])),
+        text_truncated=item.get("text_truncated", False),
     )
 
 

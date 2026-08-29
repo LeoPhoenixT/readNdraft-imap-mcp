@@ -10,7 +10,7 @@ from readndraft_imap_mcp.imap.models import (
     DraftUpdateResult,
     FlagChange,
     HtmlContent,
-    Mailbox,
+    MailboxBatchResult,
     MessageContent,
     MessageIdentity,
     MoveResult,
@@ -25,7 +25,9 @@ class ReadOnlyBroker(Protocol):
 
     def list_accounts(self) -> list[dict[str, str | int | bool | None]]: ...
 
-    async def list_mailboxes(self, account_id: str) -> tuple[Mailbox, ...]: ...
+    async def list_mailboxes_batch(
+        self, account_ids: tuple[str, ...]
+    ) -> tuple[MailboxBatchResult, ...]: ...
 
     async def search_emails(
         self,
@@ -43,10 +45,12 @@ class ReadOnlyBroker(Protocol):
         cursor: str | None = None,
     ) -> SearchPage: ...
 
-    async def get_email(self, identity: MessageIdentity) -> MessageContent: ...
+    async def get_email(
+        self, identity: MessageIdentity, max_text_chars: int | None = None
+    ) -> MessageContent: ...
 
     async def get_emails(
-        self, identities: tuple[MessageIdentity, ...]
+        self, identities: tuple[MessageIdentity, ...], max_text_chars: int | None = None
     ) -> tuple[BatchMessageContent, ...]: ...
 
     async def get_email_html(self, identity: MessageIdentity) -> HtmlContent: ...
@@ -139,7 +143,7 @@ class UnavailableBroker:
     def list_accounts(self):
         return self._unavailable()
 
-    async def list_mailboxes(self, account_id: str):
+    async def list_mailboxes_batch(self, account_ids):
         return self._unavailable()
 
     async def search_emails(
@@ -152,10 +156,10 @@ class UnavailableBroker:
     ):
         return self._unavailable()
 
-    async def get_email(self, identity):
+    async def get_email(self, identity, max_text_chars=None):
         return self._unavailable()
 
-    async def get_emails(self, identities):
+    async def get_emails(self, identities, max_text_chars=None):
         return self._unavailable()
 
     async def get_email_html(self, identity):

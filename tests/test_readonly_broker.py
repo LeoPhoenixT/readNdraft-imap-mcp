@@ -159,6 +159,64 @@ def test_batch_plain_text_reads_are_ordered_and_share_one_connection() -> None:
     assert results[1].error == "not_found"
 
 
+def test_plain_text_preview_is_truncated_before_batch_budgeting() -> None:
+    class ReadClient(FakeClient):
+        def get_message(self, identity, max_source_bytes=50 * 1024 * 1024):
+            return MessageContent(identity, {}, "abcdef", (), (), 100)
+
+    broker = BrokerService(
+        AccountRegistry(
+            [AccountConfig("personal", "pinned.example.com", 993, "leo@example.com")]
+        ),
+        FakeCredentialStore(),
+        ReadClient,
+    )
+    identity = MessageIdentity("personal", "INBOX", "42", "7")
+    message = asyncio.run(broker.get_email(identity, max_text_chars=3))
+    assert (message.text, message.text_total_chars, message.text_truncated) == (
+        "abc", 6, True
+    )
+    batch = asyncio.run(broker.get_emails((identity,), max_text_chars=3))
+    assert batch[0].message is not None
+    assert batch[0].message.text == "abc"
+    with pytest.raises(ValueError, match="max_text_chars"):
+        asyncio.run(broker.get_email(identity, max_text_chars=0))
+
+
+def test_mailbox_batch_preserves_order_and_isolates_failures() -> None:
+    registry = AccountRegistry(
+        [
+            AccountConfig("first", "first.example.com", 993, "first@example.com"),
+            AccountConfig("second", "second.example.com", 993, "second@example.com"),
+        ]
+    )
+
+    class Credentials:
+        async def load_secret(self, account_id):
+            if account_id == "second":
+                raise KeyError(account_id)
+            return "secret"
+
+    class BatchClient:
+        def __init__(self, account, secret):
+            self.account = account
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def list_mailboxes(self):
+            return (Mailbox(f"{self.account.account_id}-INBOX", "/", ()),)
+
+    broker = BrokerService(registry, Credentials(), BatchClient)
+    outcomes = asyncio.run(broker.list_mailboxes_batch(("first", "second")))
+    assert [(item.account_id, item.ok, item.error) for item in outcomes] == [
+        ("first", True, None), ("second", False, "not_found")
+    ]
+
+
 def test_batch_plain_text_read_limits_accounts_and_duplicates() -> None:
     broker = build_broker()
     identity = MessageIdentity("personal", "INBOX", "42", "7")

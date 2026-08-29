@@ -16,6 +16,7 @@ from readndraft_imap_mcp.imap.models import (
     FlagChange,
     HtmlContent,
     Mailbox,
+    MailboxBatchResult,
     MessageContent,
     MessageIdentity,
     MoveResult,
@@ -43,9 +44,13 @@ class FakeBroker:
             }
         ]
 
-    async def list_mailboxes(self, account_id):
-        assert account_id == "personal"
-        return (Mailbox("INBOX", "/", (r"\HasNoChildren",)),)
+    async def list_mailboxes_batch(self, account_ids):
+        assert account_ids == ("personal",)
+        return (
+            MailboxBatchResult(
+                "personal", True, (Mailbox("INBOX", "/", (r"\HasNoChildren",)),)
+            ),
+        )
 
     async def search_emails(self, account_id, mailbox, filters, limit=50):
         assert (account_id, mailbox, limit) == ("personal", "INBOX", 1)
@@ -72,7 +77,7 @@ class FakeBroker:
             targets_pending=(),
         )
 
-    async def get_email(self, identity):
+    async def get_email(self, identity, max_text_chars=None):
         assert identity == IDENTITY
         return MessageContent(
             IDENTITY,
@@ -82,9 +87,9 @@ class FakeBroker:
             (AttachmentMetadata("part-2", "safe.txt", "text/plain", 3),),
         )
 
-    async def get_emails(self, identities):
+    async def get_emails(self, identities, max_text_chars=None):
         assert identities == (IDENTITY,)
-        return (BatchMessageContent(IDENTITY, True, await self.get_email(IDENTITY)),)
+        return (BatchMessageContent(IDENTITY, True, await self.get_email(IDENTITY, max_text_chars)),)
 
     async def get_email_html(self, identity):
         assert identity == IDENTITY
@@ -195,6 +200,11 @@ async def exercise_server() -> None:
         search_schema = repr(tools["search_emails"].outputSchema)
         for field in ("account_id", "mailbox", "uid_validity", "uid", "size"):
             assert field in search_schema
+        search_input = tools["search_emails"].inputSchema
+        assert "targets" in search_input["properties"]
+        assert "targets" in search_input["required"]
+        assert "accounts" not in search_input["properties"]
+        assert "mailboxes" not in search_input["properties"]
         assert tools["get_email"].annotations.readOnlyHint is True
         assert tools["set_star"].annotations.readOnlyHint is False
         assert tools["set_star"].annotations.idempotentHint is True
@@ -221,11 +231,30 @@ async def exercise_server() -> None:
             ]
         }
 
+        mailboxes = await session.call_tool(
+            "list_mailboxes", {"account_ids": ["personal"]}
+        )
+        assert mailboxes.isError is False
+        assert mailboxes.structuredContent["result"] == [
+            {
+                "account_id": "personal",
+                "ok": True,
+                "mailboxes": [
+                    {
+                        "name": "INBOX",
+                        "display_name": "INBOX",
+                        "delimiter": "/",
+                        "flags": [r"\HasNoChildren"],
+                    }
+                ],
+                "error": None,
+            }
+        ]
+
         search = await session.call_tool(
             "search_emails",
             {
-                "accounts": ["personal"],
-                "mailboxes": ["INBOX"],
+                "targets": [{"account_id": "personal", "mailbox": "INBOX"}],
                 "limit": 1,
                 "fields": ["subject"],
             },
@@ -242,6 +271,18 @@ async def exercise_server() -> None:
         ]
         assert search.structuredContent["targets_pending"] == []
 
+        rejected_targets = await session.call_tool(
+            "search_emails",
+            {"targets": [{"account_id": "personal", "mailbox": "INBOX"}] * 2},
+        )
+        assert rejected_targets.isError is True
+
+        for account_ids in (["personal", "personal"], [f"a-{item}" for item in range(11)]):
+            rejected_mailboxes = await session.call_tool(
+                "list_mailboxes", {"account_ids": account_ids}
+            )
+            assert rejected_mailboxes.isError is True
+
         message = await session.call_tool(
             "get_email",
             {
@@ -253,6 +294,17 @@ async def exercise_server() -> None:
         )
         assert message.isError is False, message.content
         assert message.structuredContent["text"] == "plain text"
+        assert message.structuredContent["text_total_chars"] == len("plain text")
+        assert message.structuredContent["text_truncated"] is False
+        for preview in (True, 0, 100001):
+            rejected_preview = await session.call_tool(
+                "get_email",
+                {
+                    "account_id": "personal", "mailbox": "INBOX",
+                    "uid_validity": "42", "uid": "7", "max_text_chars": preview,
+                },
+            )
+            assert rejected_preview.isError is True
 
         messages = await session.call_tool(
             "get_emails",
@@ -438,15 +490,18 @@ async def exercise_server() -> None:
         ] == "Archive"
 
         rejected = await session.call_tool(
-            "search_emails", {"accounts": ["personal"], "limit": 501}
+            "search_emails", {"targets": [{"account_id": "personal", "mailbox": "INBOX"}], "limit": 501}
         )
         assert rejected.isError is True
 
         combined = await session.call_tool(
             "search_emails",
             {
-                "accounts": ["personal", "other"],
-                "mailboxes": [f"Box-{index}" for index in range(11)],
+                "targets": [
+                    {"account_id": account, "mailbox": f"Box-{index}"}
+                    for account in ("personal", "other")
+                    for index in range(11)
+                ],
                 "limit": 501,
             },
         )
