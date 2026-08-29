@@ -58,6 +58,7 @@ _COPYUID_VALUE_RE = re.compile(
 _MOVE_BLOCKED_FLAGS = frozenset(
     flag.casefold() for flag in (r"\Trash", r"\Junk", r"\Drafts", r"\Sent")
 )
+SEARCH_FETCH_CHUNK_SIZE = 25
 
 
 class ImapClientError(RuntimeError):
@@ -157,6 +158,73 @@ def _first_payload(data: Iterable[Any]) -> bytes:
         if isinstance(item, tuple) and len(item) > 1 and isinstance(item[1], bytes):
             return item[1]
     raise ImapClientError("server returned no message payload")
+
+
+def _fetch_records(
+    data: Iterable[Any], expected_uids: tuple[str, ...], *, require_payload: bool
+) -> dict[str, tuple[bytes, bytes | None]]:
+    """Return one strictly validated metadata/payload pair per requested UID."""
+    records: list[tuple[list[bytes], bytes | None]] = []
+    if not require_payload:
+        for item in data:
+            if isinstance(item, bytes):
+                records.append(([item], None))
+            elif isinstance(item, tuple) and item and isinstance(item[0], bytes):
+                records.append(([item[0]], None))
+            elif item is not None:
+                raise ImapClientError("server returned invalid FETCH metadata")
+        if not records:
+            raise ImapClientError("server returned invalid FETCH metadata")
+        return _validated_fetch_records(records, expected_uids, require_payload=False)
+
+    prefix: list[bytes] = []
+    current: list[bytes] | None = None
+    payload: bytes | None = None
+    for item in data:
+        if isinstance(item, tuple):
+            if current is not None:
+                records.append((current, payload))
+            head = item[0] if item and isinstance(item[0], bytes) else None
+            if head is None:
+                raise ImapClientError("server returned invalid FETCH metadata")
+            current = [*prefix, head]
+            prefix = []
+            payload = item[1] if len(item) > 1 and isinstance(item[1], bytes) else None
+        elif isinstance(item, bytes):
+            if current is None:
+                prefix.append(item)
+            else:
+                current.append(item)
+        elif item is not None:
+            raise ImapClientError("server returned invalid FETCH metadata")
+    if current is not None:
+        records.append((current, payload))
+    if prefix or not records:
+        raise ImapClientError("server returned invalid FETCH metadata")
+    return _validated_fetch_records(records, expected_uids, require_payload=True)
+
+
+def _validated_fetch_records(
+    records: Iterable[tuple[list[bytes], bytes | None]],
+    expected_uids: tuple[str, ...],
+    *,
+    require_payload: bool,
+) -> dict[str, tuple[bytes, bytes | None]]:
+    values: dict[str, tuple[bytes, bytes | None]] = {}
+    expected = set(expected_uids)
+    for fragments, literal in records:
+        head = b" ".join(fragments)
+        uid = _parse_number(head, _UID_RE, "uid")
+        if uid not in expected:
+            raise ImapClientError("UID FETCH returned an unexpected UID")
+        if uid in values:
+            raise ImapClientError("UID FETCH returned a duplicate UID")
+        if require_payload and literal is None:
+            raise ImapClientError("server returned no message payload")
+        values[uid] = (head, literal)
+    if set(values) != expected:
+        raise ImapClientError("UID FETCH omitted a requested UID")
+    return values
 
 
 def _quote_search(value: str) -> str:
@@ -627,34 +695,53 @@ class ImapClient:
         has_more = len(selected) > limit
         selected = selected[:limit]
         results: list[SearchResult] = []
-        for uid in selected:
-            fetched = _expect_ok(
-                self.imap.uid(
-                    "FETCH",
-                    uid,
-                    "(UID RFC822.SIZE INTERNALDATE BODY.PEEK[HEADER.FIELDS "
-                    "(DATE FROM TO CC SUBJECT MESSAGE-ID IN-REPLY-TO)])",
-                ),
-                "UID FETCH summary",
-            )
-            head = _metadata_head(fetched)
-            header_message = BytesParser(policy=policy.default).parsebytes(
-                _first_payload(fetched), headersonly=True
-            )
-            results.append(
-                SearchResult(
-                    identity=MessageIdentity(
-                        self.account.account_id,
-                        mailbox,
-                        uid_validity,
-                        _parse_number(head, _UID_RE, "uid"),
+        for start in range(0, len(selected), SEARCH_FETCH_CHUNK_SIZE):
+            chunk = tuple(selected[start : start + SEARCH_FETCH_CHUNK_SIZE])
+            uid_set = ",".join(chunk)
+            summaries = _fetch_records(
+                _expect_ok(
+                    self.imap.uid(
+                        "FETCH",
+                        uid_set,
+                        "(UID RFC822.SIZE INTERNALDATE BODY.PEEK[HEADER.FIELDS "
+                        "(DATE FROM TO CC SUBJECT MESSAGE-ID IN-REPLY-TO)])",
                     ),
-                    headers=safe_headers(header_message),
-                    flags=self._get_flags(uid),
-                    size=int(_parse_number(head, _SIZE_RE, "size")),
-                    received_at=_parse_internal_date(head),
-                )
+                    "UID FETCH summary",
+                ),
+                chunk,
+                require_payload=True,
             )
+            flags = _fetch_records(
+                _expect_ok(
+                    self.imap.uid("FETCH", uid_set, "(UID FLAGS)"),
+                    "UID FETCH FLAGS",
+                ),
+                chunk,
+                require_payload=False,
+            )
+            if set(summaries) != set(flags):
+                raise ImapClientError("UID FETCH summary and FLAGS results differ")
+            for uid in chunk:
+                head, literal = summaries[uid]
+                assert literal is not None
+                flag_head, _ = flags[uid]
+                header_message = BytesParser(policy=policy.default).parsebytes(
+                    literal, headersonly=True
+                )
+                results.append(
+                    SearchResult(
+                        identity=MessageIdentity(
+                            self.account.account_id,
+                            mailbox,
+                            uid_validity,
+                            uid,
+                        ),
+                        headers=safe_headers(header_message),
+                        flags=_parse_flags(flag_head),
+                        size=int(_parse_number(head, _SIZE_RE, "size")),
+                        received_at=_parse_internal_date(head),
+                    )
+                )
         return SearchWindow(
             results=tuple(results),
             uid_validity=uid_validity,

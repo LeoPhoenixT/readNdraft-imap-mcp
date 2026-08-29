@@ -139,10 +139,12 @@ class SearchSummaryConnection:
         summary_flags: bool,
         standalone: bytes | None = None,
         trailing_summary_metadata: bool = False,
+        standalone_flags_bytes: bool = False,
     ) -> None:
         self.summary_flags = summary_flags
         self.standalone = standalone or b"1 (UID 7 FLAGS (\\Seen $Label1))"
         self.trailing_summary_metadata = trailing_summary_metadata
+        self.standalone_flags_bytes = standalone_flags_bytes
         self.commands = []
 
     def select(self, mailbox, readonly=False):
@@ -158,6 +160,8 @@ class SearchSummaryConnection:
         if args[0] == "SEARCH":
             return "OK", [b"7"]
         if args[2] == "(UID FLAGS)":
+            if self.standalone_flags_bytes:
+                return "OK", [self.standalone]
             return "OK", [(self.standalone, b"")]
         assert args[0:2] == ("FETCH", "7")
         assert "BODY.PEEK[HEADER.FIELDS" in args[2]
@@ -184,13 +188,16 @@ class SearchSummaryConnection:
 
 @pytest.mark.parametrize("summary_flags", [True, False])
 @pytest.mark.parametrize("trailing_summary_metadata", [True, False])
+@pytest.mark.parametrize("standalone_flags_bytes", [True, False])
 def test_search_fetches_accurate_flags_separately(
     summary_flags: bool,
     trailing_summary_metadata: bool,
+    standalone_flags_bytes: bool,
 ) -> None:
     connection = SearchSummaryConnection(
         summary_flags=summary_flags,
         trailing_summary_metadata=trailing_summary_metadata,
+        standalone_flags_bytes=standalone_flags_bytes,
     )
     client = ImapClient(
         AccountConfig("personal", "mail.example.com", 993, "leo@example.com"),
@@ -224,11 +231,14 @@ def test_search_fetches_accurate_flags_separately(
         (b"1 (UID 8 FLAGS (\\Seen))", "unexpected UID"),
     ),
 )
+@pytest.mark.parametrize("standalone_flags_bytes", [True, False])
 def test_search_fails_closed_for_invalid_standalone_flags(
-    standalone: bytes, message: str
+    standalone: bytes, message: str, standalone_flags_bytes: bool
 ) -> None:
     connection = SearchSummaryConnection(
-        summary_flags=False, standalone=standalone
+        summary_flags=False,
+        standalone=standalone,
+        standalone_flags_bytes=standalone_flags_bytes,
     )
     client = ImapClient(
         AccountConfig("personal", "mail.example.com", 993, "leo@example.com"),
@@ -259,19 +269,25 @@ class PagedSearchConnection:
                     str(uid) for uid in range(max(1, lower), min(5, upper) + 1)
                 ).encode()
             ]
-        uid = args[1]
+        uids = args[1].split(",")
         if args[2] == "(UID FLAGS)":
-            return "OK", [(f"1 (UID {uid} FLAGS ())".encode(), b"")]
+            return "OK", [
+                (f"1 (UID {uid} FLAGS ())".encode(), b"") for uid in uids
+            ]
         assert "INTERNALDATE" in args[2]
         return "OK", [
-            (
+            item
+            for uid in uids
+            for item in (
                 (
-                    f'1 (UID {uid} RFC822.SIZE 20 INTERNALDATE '
-                    '"22-Jul-2026 11:30:00 +0800" BODY[HEADER.FIELDS] {15}'
-                ).encode(),
-                f"Subject: {uid}\r\n\r\n".encode(),
-            ),
-            b")",
+                    (
+                        f'1 (UID {uid} RFC822.SIZE 20 INTERNALDATE '
+                        '"22-Jul-2026 11:30:00 +0800" BODY[HEADER.FIELDS] {15}'
+                    ).encode(),
+                    f"Subject: {uid}\r\n\r\n".encode(),
+                ),
+                b")",
+            )
         ]
 
 
@@ -302,6 +318,82 @@ def test_search_window_pages_by_uid_without_boundary_duplicates() -> None:
         ("SEARCH", None, "ALL", "UID", "1:5"),
         ("SEARCH", None, "ALL", "UID", "1:3"),
     ]
+
+
+class ChunkedSearchConnection(PagedSearchConnection):
+    def __init__(self, *, fault: str | None = None, flags_as_bytes: bool = False) -> None:
+        super().__init__()
+        self.commands = []
+        self.fault = fault
+        self.flags_as_bytes = flags_as_bytes
+
+    def response(self, name):
+        return name, [b"42" if name == "UIDVALIDITY" else b"31"]
+
+    def uid(self, *args):
+        self.commands.append(args)
+        if args[0] == "SEARCH":
+            return "OK", [b" ".join(str(uid).encode() for uid in range(1, 31))]
+        if args[0] != "FETCH":
+            raise AssertionError(args)
+        uids = args[1].split(",")
+        if self.fault == "unexpected" and args[2] == "(UID FLAGS)":
+            uids = [*uids[:-1], "999"]
+        if self.fault == "duplicate" and args[2] == "(UID FLAGS)":
+            uids = [uids[0], *uids]
+        if self.fault == "missing" and args[2] == "(UID FLAGS)":
+            uids = uids[:-1]
+        if args[2] == "(UID FLAGS)":
+            values = [f"1 (UID {uid} FLAGS ())".encode() for uid in uids]
+            return "OK", values if self.flags_as_bytes else [(value, b"") for value in values]
+        return "OK", [
+            item
+            for uid in uids
+            for item in (
+                (
+                    (
+                        f'1 (UID {uid} RFC822.SIZE 20 INTERNALDATE '
+                        '"22-Jul-2026 11:30:00 +0800" BODY[HEADER.FIELDS] {15}'
+                    ).encode(),
+                    f"Subject: {uid}\r\n\r\n".encode(),
+                ),
+                b")",
+            )
+        ]
+
+
+@pytest.mark.parametrize("flags_as_bytes", [True, False])
+def test_search_fetches_selected_uids_in_25_item_chunks(flags_as_bytes: bool) -> None:
+    client = ImapClient(
+        AccountConfig("personal", "mail.example.com", 993, "leo@example.com"),
+        "secret",
+    )
+    connection = ChunkedSearchConnection(flags_as_bytes=flags_as_bytes)
+    client.connection = connection
+
+    result = client.search("INBOX", SearchFilters(), limit=30)
+
+    fetches = [command for command in connection.commands if command[0] == "FETCH"]
+    assert len(fetches) == 4
+    assert [item.identity.uid for item in result] == [str(uid) for uid in range(30, 0, -1)]
+    assert [command[1] for command in fetches] == [
+        ",".join(str(uid) for uid in range(30, 5, -1)),
+        ",".join(str(uid) for uid in range(30, 5, -1)),
+        "5,4,3,2,1",
+        "5,4,3,2,1",
+    ]
+
+
+@pytest.mark.parametrize("fault", ["missing", "duplicate", "unexpected"])
+def test_search_fails_closed_for_invalid_batched_uid_sets(fault: str) -> None:
+    client = ImapClient(
+        AccountConfig("personal", "mail.example.com", 993, "leo@example.com"),
+        "secret",
+    )
+    client.connection = ChunkedSearchConnection(fault=fault)
+
+    with pytest.raises(ImapClientError, match="UID FETCH"):
+        client.search("INBOX", SearchFilters(), limit=30)
 
 
 class LargeMailboxSearchConnection(PagedSearchConnection):
