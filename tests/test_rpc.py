@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import platform
@@ -13,11 +14,22 @@ from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.broker.limits import RequestQuotaError
 from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
 from readndraft_imap_mcp.imap.models import (
+    BatchMessageContent,
     BatchMoveResult,
+    Mailbox,
+    MailboxBatchResult,
+    MessageContent,
     MessageIdentity,
     MoveResult,
 )
-from readndraft_imap_mcp.ipc.rpc import BrokerRpcServer, _decode_request, _encode, _json_kwargs, _safe_error
+from readndraft_imap_mcp.ipc.rpc import (
+    BrokerRpcServer,
+    IpcBrokerClient,
+    _decode_request,
+    _encode,
+    _json_kwargs,
+    _safe_error,
+)
 from readndraft_imap_mcp.mime.html import AuthoredHtmlError
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
@@ -150,6 +162,67 @@ def test_rpc_parameter_rejection_echoes_valid_request_id() -> None:
     assert response["request_id"] == request_id
     assert response["ok"] is False
     assert response["error"]["type"] == "invalid_request"
+
+
+def test_rpc_mailbox_batch_and_text_preview_round_trip() -> None:
+    identity = MessageIdentity("personal", "INBOX", "42", "7")
+
+    class ReadBroker(FakeBroker):
+        async def list_mailboxes_batch(self, account_ids):
+            return tuple(
+                MailboxBatchResult(account_id, True, (Mailbox("INBOX", "/", ()),))
+                for account_id in account_ids
+            )
+
+        async def get_email(self, requested, max_text_chars=None):
+            assert (requested, max_text_chars) == (identity, 3)
+            return MessageContent(identity, {}, "abc", (), (), 10, 6, True)
+
+        async def get_emails(self, identities, max_text_chars=None):
+            return (BatchMessageContent(identities[0], True, await self.get_email(identities[0], max_text_chars)),)
+
+    server = BrokerRpcServer(ReadBroker(), "unused", b"x")
+    mailbox = json.loads(server.handle_frame(_frame("list_mailboxes", {"account_ids": ["personal"]})))
+    assert mailbox["result"][0]["mailboxes"][0]["name"] == "INBOX"
+    params = {
+        "identity": {
+            "account_id": "personal",
+            "mailbox": "INBOX",
+            "uid_validity": "42",
+            "uid": "7",
+        },
+        "max_text_chars": 3,
+    }
+    single = json.loads(server.handle_frame(_frame("get_email", params)))
+    assert single["result"]["text_total_chars"] == 6
+    batch = json.loads(
+        server.handle_frame(
+            _frame(
+                "get_emails",
+                {"identities": [params["identity"]], "max_text_chars": 3},
+            )
+        )
+    )
+    assert batch["result"][0]["message"]["text_truncated"] is True
+
+    class CapturingClient(IpcBrokerClient):
+        def __init__(self):
+            pass
+
+        async def _request(self, operation, request):
+            assert operation == "get_email"
+            assert request["max_text_chars"] == 3
+            return single["result"]
+
+    message = asyncio.run(CapturingClient().get_email(identity, 3))
+    assert (message.text, message.text_total_chars, message.text_truncated) == ("abc", 6, True)
+
+
+@pytest.mark.parametrize("value", [True, 0, 100001])
+def test_rpc_rejects_invalid_text_preview(value) -> None:
+    identity = {"account_id": "personal", "mailbox": "INBOX", "uid_validity": "42", "uid": "7"}
+    with pytest.raises(ValueError, match="invalid RPC parameter type"):
+        _decode_request(_frame("get_email", {"identity": identity, "max_text_chars": value}))
 
 
 def test_rpc_rejects_type_confused_writes() -> None:
