@@ -3,7 +3,7 @@
 Configure the account first in a real terminal:
 
 ```console
-uvx readndraft-imap-mcp@0.7.1 setup
+uvx readndraft-imap-mcp@0.9.0 setup
 ```
 
 Then run these commands inside Claude Code:
@@ -20,7 +20,7 @@ pinned to the matching Python runtime release.
 For an installation created by 0.3.x or earlier, run this first:
 
 ```console
-uvx readndraft-imap-mcp@0.7.1 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.9.0 migrate-plugin --client claude-code
 ```
 
 The migration removes only a recognized user-scoped legacy entry and unmodified

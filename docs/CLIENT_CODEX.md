@@ -5,7 +5,7 @@
 Configure the account first:
 
 ```console
-uvx readndraft-imap-mcp@0.7.1 setup
+uvx readndraft-imap-mcp@0.9.0 setup
 ```
 
 Then let Codex own the integration lifecycle:
@@ -24,7 +24,7 @@ For an installation created by 0.3.x or earlier, remove only recognized legacy
 state before installing the plugin:
 
 ```console
-uvx readndraft-imap-mcp@0.7.1 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.9.0 migrate-plugin --client codex
 ```
 
 The migration refuses unknown/custom MCP entries and modified skills.
