@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.0
+
+### Changed
+
+- `search_emails` now accepts explicit account/mailbox targets instead of a
+  Cartesian account and mailbox selection. See the 0.9.0 MCP migration guide
+  before upgrading an existing integration.
+- `list_mailboxes` accepts multiple account aliases and reports each account's
+  result independently.
+- `get_email` and `get_emails` support bounded plain-text previews with
+  truncation metadata; the packaged skill starts reads with a 16,000-character
+  preview.
+- Search result summaries and flags are fetched in bounded IMAP batches while
+  retaining separate compatibility-safe FETCH operations.
+
 ## 0.8.1
 
 ### Changed

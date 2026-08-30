@@ -20,7 +20,7 @@ the repository or install readNdraft permanently.
 ## Guided setup
 
 ```powershell
-uvx readndraft-imap-mcp@0.7.1 setup
+uvx readndraft-imap-mcp@0.9.0 setup
 ```
 
 The wizard checks Windows Credential Manager, reads the IMAP password through a
