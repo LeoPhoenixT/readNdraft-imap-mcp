@@ -6,7 +6,26 @@ import os
 import pytest
 
 from readndraft_imap_mcp.drafts import FileDraftStore
-from readndraft_imap_mcp.drafts.store import DraftProvenanceError
+from readndraft_imap_mcp.drafts.store import (
+    DraftBusyError,
+    DraftProvenanceError,
+    DraftRecoveryRequiredError,
+)
+
+
+def _operation(record, **changes):
+    return {
+        "v": 2,
+        "operation_id": "b" * 32,
+        "account_id": record.account_id,
+        "mailbox": record.mailbox,
+        "uid_validity": record.uid_validity,
+        "old_uid": record.uid,
+        "message_id": record.message_id,
+        "attachment_hashes": ["c" * 64],
+        "phase": "prepared",
+        **changes,
+    }
 
 
 def test_draft_provenance_is_private_and_account_pinned(tmp_path) -> None:
@@ -69,6 +88,19 @@ def test_legacy_provenance_loads_without_threading_metadata(tmp_path) -> None:
     assert loaded.references == ()
 
 
+def test_separate_store_instances_reject_concurrent_draft_operation(tmp_path) -> None:
+    first = FileDraftStore((tmp_path / "drafts").resolve())
+    record = first.create(
+        account_id="personal", mailbox="Drafts", uid_validity="42", uid="99",
+        message_id="<draft@example.com>", attachment_hashes=(),
+    )
+    second = FileDraftStore(first.directory)
+    with first.operation_lock(record.draft_id):
+        with pytest.raises(DraftBusyError):
+            with second.operation_lock(record.draft_id):
+                raise AssertionError("second update acquired the lock")
+
+
 def test_provenance_write_is_fsynced_and_interrupted_replace_keeps_old_json(tmp_path, monkeypatch) -> None:
     store = FileDraftStore((tmp_path / "drafts").resolve())
     record = store.create(
@@ -96,3 +128,31 @@ def test_provenance_write_is_fsynced_and_interrupted_replace_keeps_old_json(tmp_
     assert path.read_bytes() == original
     assert json.loads(path.read_text(encoding="utf-8"))["uid"] == "99"
     assert not tuple(store.directory.glob("*.tmp"))
+
+
+def test_operation_validation_is_versioned_and_fails_closed(tmp_path) -> None:
+    store = FileDraftStore((tmp_path / "drafts").resolve())
+    record = store.create(
+        account_id="personal", mailbox="Drafts", uid_validity="42", uid="99",
+        message_id="<draft@example.com>", attachment_hashes=(),
+    )
+    store.write_operation(record.draft_id, _operation(record))
+    operation = store.get_operation(record.draft_id)
+    assert operation is not None
+    assert store.validate_operation(record, operation) == ("c" * 64,)
+    store.write_operation(record.draft_id, _operation(record, message_id="<other@example.com>"))
+    with pytest.raises(DraftRecoveryRequiredError):
+        store.validate_operation(record, store.get_operation(record.draft_id) or {})
+
+
+def test_forget_removes_associated_operation_journal(tmp_path) -> None:
+    store = FileDraftStore((tmp_path / "drafts").resolve())
+    record = store.create(
+        account_id="personal", mailbox="Drafts", uid_validity="42", uid="99",
+        message_id="<draft@example.com>", attachment_hashes=(),
+    )
+    store.write_operation(record.draft_id, _operation(record))
+    with store.operation_lock(record.draft_id):
+        assert store.forget(record.draft_id)
+    assert not (store.directory / f"{record.draft_id}.json").exists()
+    assert store.get_operation(record.draft_id) is None

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
-from readndraft_imap_mcp.credentials import CredentialStore
-from readndraft_imap_mcp.ipc import BrokerTransport
+if TYPE_CHECKING:
+    from readndraft_imap_mcp.credentials import CredentialStore
+    from readndraft_imap_mcp.ipc import BrokerTransport
 
 
 class PlatformAdapter(Protocol):

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
+from email import policy
+from email.parser import BytesParser
 
 import pytest
 
 from readndraft_imap_mcp.broker import AccountConfig, AccountRegistry, BrokerService
 from readndraft_imap_mcp.drafts import DraftProvenanceError, FileDraftStore
 from readndraft_imap_mcp.imap.models import DraftUpdateResult
+from readndraft_imap_mcp.mime.drafts import DraftAttachment
 
 
 class Credentials:
@@ -27,6 +31,7 @@ class CrashSafeClient:
     next_uid = 100
     fail_after_append = False
     fail_expunge = False
+    operations = {}
     store = None
     draft_id = None
 
@@ -44,10 +49,15 @@ class CrashSafeClient:
             return (record.uid,)
         return tuple(uid for uid, message_id in self.messages.items() if message_id == record.message_id)
 
+    def resolve_draft_operation(self, record, operation_id):
+        return tuple(uid for uid, value in self.operations.items() if value == operation_id)
+
     def append_draft_update(self, record, raw, message_id, attachment_hashes):
         uid = str(self.next_uid)
         type(self).next_uid += 1
         self.messages[uid] = message_id
+        headers = BytesParser(policy=policy.default).parsebytes(raw, headersonly=True)
+        type(self).operations[uid] = headers.get("X-ReadNdraft-Draft-Operation")
         if self.fail_after_append:
             type(self).fail_after_append = False
             raise RuntimeError("crash after append")
@@ -76,6 +86,7 @@ def _broker(tmp_path):
     CrashSafeClient.next_uid = 100
     CrashSafeClient.fail_after_append = False
     CrashSafeClient.fail_expunge = False
+    CrashSafeClient.operations = {}
     CrashSafeClient.store = store
     CrashSafeClient.draft_id = record.draft_id
     audit = Audit()
@@ -143,6 +154,39 @@ def test_failure_persisting_appended_uid_keeps_old_uid_retryable(tmp_path, monke
 
     result = _update(broker, record.draft_id)
     assert store.get(record.draft_id, "personal").uid == result.uid
+
+
+def test_recovery_uses_journal_attachment_hashes_after_append_crash(tmp_path, monkeypatch) -> None:
+    broker, store, record, _ = _broker(tmp_path)
+    changed_hash = "d" * 64
+    original_build = broker._drafts._build_draft
+
+    def build_with_changed_attachment(*args, **kwargs):
+        raw, message_id, draft = original_build(*args, **kwargs)
+        return raw, message_id, replace(
+            draft,
+            attachments=(DraftAttachment("changed.txt", 1, changed_hash, b"x"),),
+        )
+
+    monkeypatch.setattr(broker._drafts, "_build_draft", build_with_changed_attachment)
+    CrashSafeClient.fail_after_append = True
+    with pytest.raises(RuntimeError, match="crash after append"):
+        _update(broker, record.draft_id)
+    operation = store.get_operation(record.draft_id)
+    assert operation is not None
+    assert operation["v"] == 2
+    assert operation["attachment_hashes"] == [changed_hash]
+
+    monkeypatch.setattr(
+        broker._drafts,
+        "_build_draft",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("stop after recovery")),
+    )
+    with pytest.raises(RuntimeError, match="stop after recovery"):
+        _update(broker, record.draft_id)
+    recovered = store.get(record.draft_id, "personal")
+    assert recovered.attachment_hashes == (changed_hash,)
+    assert store.get_operation(record.draft_id) is None
 
 
 def test_missing_uid_reconciles_by_unique_message_id_and_updates(tmp_path) -> None:

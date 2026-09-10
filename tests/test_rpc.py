@@ -12,6 +12,7 @@ import pytest
 
 from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.broker.limits import RequestQuotaError
+from readndraft_imap_mcp.drafts import DraftBusyError, DraftRecoveryRequiredError
 from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
 from readndraft_imap_mcp.imap.models import (
     BatchMessageContent,
@@ -22,9 +23,11 @@ from readndraft_imap_mcp.imap.models import (
     MessageIdentity,
     MoveResult,
 )
+from readndraft_imap_mcp.ipc import client as rpc_module
 from readndraft_imap_mcp.ipc.rpc import (
     BrokerRpcServer,
     IpcBrokerClient,
+    RpcError,
     _decode_request,
     _encode,
     _json_kwargs,
@@ -59,6 +62,46 @@ def test_safe_error_still_redacts_plain_value_error() -> None:
         "invalid_request",
         "request rejected",
     )
+
+
+SEARCH_FILTERS = {
+    "sender": None,
+    "recipient": None,
+    "subject": None,
+    "text": None,
+    "attachment_filename": None,
+    "after": None,
+    "before": None,
+    "read": None,
+    "starred": None,
+}
+
+
+@pytest.mark.parametrize(
+    ("exception", "code"),
+    ((DraftBusyError("private"), "draft_busy"), (DraftRecoveryRequiredError("private"), "recovery_required")),
+)
+def test_rpc_maps_draft_recovery_errors_without_details(exception, code) -> None:
+    class FailingBroker:
+        def list_accounts(self):
+            raise exception
+
+    response = json.loads(BrokerRpcServer(FailingBroker(), "unused", b"x").handle_frame(_frame("list_accounts", {})))
+    assert response["error"]["type"] == code
+    assert "private" not in repr(response)
+
+
+def test_async_write_transport_loss_is_outcome_unknown() -> None:
+    class LostClient(IpcBrokerClient):
+        def __init__(self):
+            pass
+
+        def _request_sync(self, operation, params):
+            raise RpcError("private transport detail", code="connection_error")
+
+    with pytest.raises(RpcError, match="outcome_unknown") as exc:
+        asyncio.run(LostClient().update_draft("personal", "a" * 32, to=("a@example.com",), subject="s", body="b"))
+    assert "private" not in str(exc.value)
 
 
 def test_rpc_health_and_account_list_are_json_only() -> None:
@@ -111,17 +154,17 @@ def test_frontend_lease_counts_as_active_until_disconnect() -> None:
 
     connection = LeaseConnection()
     server = BrokerRpcServer(FakeBroker(), "unused", b"x")
-    worker = threading.Thread(target=server._serve_connection, args=(connection,))
+    worker = threading.Thread(target=server._transport._serve_connection, args=(connection,))
     worker.start()
     assert connection.waiting.wait(timeout=1)
-    assert server._active_clients == 1
+    assert server._transport._active_clients == 1
     response = json.loads(connection.sent[0])
     assert response["result"] == {"leased": True}
 
     connection.release.set()
     worker.join(timeout=1)
     assert not worker.is_alive()
-    assert server._active_clients == 0
+    assert server._transport._active_clients == 0
 
 
 def test_rpc_rejects_unknown_operation_before_dispatch() -> None:
@@ -162,6 +205,75 @@ def test_rpc_parameter_rejection_echoes_valid_request_id() -> None:
     assert response["request_id"] == request_id
     assert response["ok"] is False
     assert response["error"]["type"] == "invalid_request"
+
+
+@pytest.mark.parametrize(
+    ("operation", "params"),
+    (
+        ("search_emails", {"account_id": "a", "mailbox": "INBOX", "filters": {}}),
+        (
+            "search_emails",
+            {"account_id": "a", "mailbox": "INBOX", "filters": {**SEARCH_FILTERS, "after": "2026-02-30"}},
+        ),
+        (
+            "search_emails",
+            {"account_id": "a", "mailbox": "INBOX", "filters": {**SEARCH_FILTERS, "read": 1}},
+        ),
+        ("search_emails", {"account_id": "a", "mailbox": "INBOX", "filters": SEARCH_FILTERS, "limit": True}),
+        ("search_emails", {"account_id": "a", "mailbox": "INBOX", "filters": SEARCH_FILTERS, "limit": 0}),
+        ("search_email_targets", {"targets": [], "filters": SEARCH_FILTERS}),
+        ("search_email_targets", {"targets": [["a", ""]], "filters": SEARCH_FILTERS}),
+        (
+            "search_email_targets",
+            {"targets": [["a", "INBOX"]], "filters": SEARCH_FILTERS, "cursor": ""},
+        ),
+        (
+            "search_email_targets",
+            {"targets": [["a", "INBOX"]], "filters": SEARCH_FILTERS, "cursor": "游標"},
+        ),
+        ("list_mailboxes", {"account_ids": []}),
+        ("get_emails", {"identities": []}),
+    ),
+)
+def test_rpc_rejects_malformed_frames_before_broker_dispatch(operation: str, params: dict) -> None:
+    class DispatchTrackingBroker:
+        def __getattr__(self, name):
+            raise AssertionError(f"broker dispatch reached {name}")
+
+    response = json.loads(
+        BrokerRpcServer(DispatchTrackingBroker(), "unused", b"x").handle_frame(_frame(operation, params))
+    )
+
+    assert response["ok"] is False
+    assert response["error"]["type"] == "invalid_request"
+
+
+@pytest.mark.parametrize("filename", ("報告.pdf", "résumé.txt", "招待状（最終版）.pdf"))
+def test_rpc_accepts_unicode_attachment_filename_filter(filename: str) -> None:
+    decoded = _decode_request(
+        _frame(
+            "search_email_targets",
+            {
+                "targets": [["personal", "INBOX"]],
+                "filters": {**SEARCH_FILTERS, "attachment_filename": filename},
+                "limit": 1,
+                "cursor": None,
+            },
+        )
+    )
+
+    assert decoded["params"]["filters"]["attachment_filename"] == filename
+
+
+def test_rpc_accepts_nullable_reply_identity_and_empty_recipient_lists() -> None:
+    decoded = _decode_request(
+        _frame(
+            "create_draft",
+            {"account_id": "a", "to": [], "cc": [], "bcc": [], "subject": "s", "body": "b", "reply_to_message": None},
+        )
+    )
+
+    assert decoded["params"] == {"account_id": "a", "to": [], "cc": [], "bcc": [], "subject": "s", "body": "b"}
 
 
 def test_rpc_mailbox_batch_and_text_preview_round_trip() -> None:
@@ -405,15 +517,15 @@ def test_launcher_owned_server_waits_for_idle_and_grace() -> None:
         idle_timeout_seconds=0.05,
         shutdown_grace_seconds=0.05,
     )
-    server._client_started()
-    watcher = threading.Thread(target=server._idle_watchdog)
+    server._transport._client_started()
+    watcher = threading.Thread(target=server._transport._idle_watchdog)
     watcher.start()
     time.sleep(0.12)
-    assert server._shutdown.is_set() is False
+    assert server._transport._shutdown.is_set() is False
 
-    server._client_finished()
+    server._transport._client_finished()
     watcher.join(timeout=1)
-    assert server._shutdown.is_set() is True
+    assert server._transport._shutdown.is_set() is True
 
 
 def test_invalid_idle_lifecycle_values_fail_closed() -> None:
@@ -430,3 +542,63 @@ def test_stale_socket_cleanup_refuses_non_socket_path(tmp_path) -> None:
     with pytest.raises(RuntimeError, match="not a socket"):
         BrokerRpcServer._unix_endpoint_in_use(Path(endpoint))
     assert endpoint.read_text(encoding="utf-8") == "do not delete"
+
+
+def test_frontend_lease_bounds_delayed_connect_and_reply(monkeypatch) -> None:
+    class DelayedConnection:
+        def send_bytes(self, value):
+            return None
+
+        def poll(self, timeout):
+            time.sleep(0.1)
+            return False
+
+        def close(self):
+            return None
+
+    def delayed_client(*args, **kwargs):
+        time.sleep(0.1)
+        return DelayedConnection()
+
+    monkeypatch.setattr(rpc_module, "Client", delayed_client)
+    monkeypatch.setattr(rpc_module, "RPC_RESPONSE_TIMEOUT_SECONDS", 0.02)
+    client = IpcBrokerClient("unused", b"x")
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):
+        with client.frontend_lease():
+            pass
+    assert time.monotonic() - started < 0.06
+
+
+def test_frontend_lease_bounds_blocked_send(monkeypatch) -> None:
+    release = threading.Event()
+
+    class BlockingConnection:
+        def send_bytes(self, value):
+            release.wait(timeout=1)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(rpc_module, "Client", lambda *args, **kwargs: BlockingConnection())
+    monkeypatch.setattr(rpc_module, "RPC_RESPONSE_TIMEOUT_SECONDS", 0.02)
+    started = time.monotonic()
+    try:
+        with pytest.raises(TimeoutError):
+            with IpcBrokerClient("unused", b"x").frontend_lease():
+                pass
+        assert time.monotonic() - started < 0.06
+    finally:
+        release.set()
+
+
+def test_runtime_loop_stops_after_requested_shutdown() -> None:
+    server = BrokerRpcServer(FakeBroker(), "unused", b"x")
+    server.handle_frame(_frame("health", {}))
+    loop = server._transport._runtime_loop
+    assert loop is not None
+    server.request_shutdown()
+    deadline = time.monotonic() + 1
+    while not loop.is_closed() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert loop.is_closed()

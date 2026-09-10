@@ -149,7 +149,8 @@ def test_create_draft_build_failure_is_audited_without_content(tmp_path, monkeyp
     audit = Audit()
     broker = build_broker(tmp_path, audit)
     monkeypatch.setattr(
-        broker, "_build_draft",
+        broker._drafts,
+        "_build_draft",
         lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("secret body /private/path")),
     )
 
@@ -182,7 +183,8 @@ def test_update_draft_build_failure_is_audited_without_content(tmp_path, monkeyp
     )
     audit.events.clear()
     monkeypatch.setattr(
-        broker, "_build_draft",
+        broker._drafts,
+        "_build_draft",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("private update")),
     )
 

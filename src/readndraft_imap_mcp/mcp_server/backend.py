@@ -20,7 +20,7 @@ from readndraft_imap_mcp.imap.models import (
 )
 
 
-class ReadOnlyBroker(Protocol):
+class BrokerBackend(Protocol):
     """Semantic broker boundary available to the untrusted MCP frontend."""
 
     def list_accounts(self) -> list[dict[str, str | int | bool | None]]: ...
@@ -151,6 +151,7 @@ class UnavailableBroker:
     ):
         return self._unavailable()
 
+
     async def search_email_targets(
         self, targets, filters, limit=50
     ):
@@ -198,3 +199,6 @@ class UnavailableBroker:
         self, identities, destination_mailbox, client_id=None
     ):
         return self._unavailable()
+
+
+ReadOnlyBroker = BrokerBackend

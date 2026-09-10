@@ -3,7 +3,6 @@
 from .accounts import AccountConfig, AccountRegistry
 from .limits import AccountRequestQuota, RequestQuotaError
 from .protocol import HealthRequest, HealthResponse, ProtocolError, decode_request
-from .service import BrokerService
 
 __all__ = [
     "BrokerService",
@@ -16,3 +15,10 @@ __all__ = [
     "RequestQuotaError",
     "decode_request",
 ]
+
+
+def __getattr__(name: str):
+    if name == "BrokerService":
+        from .service import BrokerService
+        return BrokerService
+    raise AttributeError(name)
