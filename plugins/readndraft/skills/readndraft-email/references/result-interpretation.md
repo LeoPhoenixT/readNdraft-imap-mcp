@@ -9,6 +9,10 @@
   the sender-controlled `Date` header. For multiple targets,
   `target_then_mailbox_uid_desc` preserves requested target order, then UID
   order within each target.
+- `target_statuses` is ordered exactly as the requested targets. A `partial`
+  target has its own cursor: continue it as a later one-target search using the
+  unchanged filters. `pending` has not been scanned. `complete` has no cursor;
+  `error` carries only a safe category and can retain an input cursor.
 - `targets_searched` lists attempted raw account/mailbox targets, including
   targets with errors. `targets_pending` lists targets skipped because the page
   limit was already full. Never describe a pending target as searched.
@@ -20,8 +24,9 @@
 - `after` maps to IMAP SINCE and includes that calendar day. `before` maps to
   IMAP BEFORE and excludes that calendar day. Both accept `YYYY-MM-DD`, not a
   timestamp.
-- An empty result means no match only when `errors` and `targets_pending` are
-  also empty. Use `fields` to request only needed safe headers on large pages;
+- An empty result means no match only when every `target_statuses` item is
+  `complete`. Attachment filename matches are verified from MIME metadata; a
+  top-level message header with the same text is not enough. Use `fields` to request only needed safe headers on large pages;
   identity, flags, size, and `received_at` are always retained.
 - `get_email` returns safe headers, plain text, current flags, and attachment
   metadata. It does not mark a message as read.

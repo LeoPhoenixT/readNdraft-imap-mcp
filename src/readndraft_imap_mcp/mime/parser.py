@@ -26,8 +26,19 @@ class MessageLimitError(ValueError):
 class _HTMLToTextParser(HTMLParser):
     _hidden = {"head", "iframe", "math", "object", "script", "style", "svg", "template"}
     _blocks = {
-        "blockquote", "div", "h1", "h2", "h3", "h4", "h5", "h6", "hr",
-        "p", "pre", "table", "tr",
+        "blockquote",
+        "div",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "hr",
+        "p",
+        "pre",
+        "table",
+        "tr",
     }
 
     def __init__(self) -> None:
@@ -165,6 +176,21 @@ def _leaf_parts(message: Message):
             yield f"part-{index}", part
 
 
+def _encoded_payload_size(part: Message) -> int | None:
+    """Report transfer-encoded octets, never decoded Unicode characters."""
+    payload = part.get_payload(decode=False)
+    if isinstance(payload, bytes):
+        return len(payload)
+    if isinstance(payload, str):
+        # A decoded Unicode payload cannot be reconstructed into the original
+        # wire octets.  ASCII transfer encodings remain exact.
+        try:
+            return len(payload.encode("ascii"))
+        except UnicodeEncodeError:
+            return None
+    return None
+
+
 def plain_text(message: Message) -> str:
     value = _body_value(message, "text/plain")
     if value is not None:
@@ -192,6 +218,7 @@ def attachment_metadata(message: Message) -> tuple[AttachmentMetadata, ...]:
                 filename=sanitize_filename(part.get_filename()),
                 content_type=part.get_content_type(),
                 size=len(payload),
+                encoded_size=_encoded_payload_size(part),
             )
         )
     return tuple(result)
@@ -211,7 +238,7 @@ def get_attachment(message: Message, attachment_id: str) -> AttachmentContent:
             filename=sanitize_filename(part.get_filename()),
             content_type=part.get_content_type(),
             size=len(payload),
+            encoded_size=_encoded_payload_size(part),
         )
         return AttachmentContent(metadata=metadata, content=payload)
     raise KeyError("unknown attachment_id")
-

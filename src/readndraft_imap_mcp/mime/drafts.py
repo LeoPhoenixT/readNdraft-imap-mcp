@@ -117,6 +117,7 @@ def build_draft_message(
     *,
     sender_name: str | None = None,
     message_id: str | None = None,
+    operation_id: str | None = None,
 ) -> tuple[bytes, str]:
     message = EmailMessage(policy=policy.SMTP)
     message["From"] = Address(display_name=sender_name or "", addr_spec=from_address)
@@ -129,6 +130,8 @@ def build_draft_message(
     message["Date"] = formatdate(localtime=True)
     message_id = message_id or make_msgid(domain=from_address.partition("@")[2] or None)
     message["Message-ID"] = message_id
+    if operation_id is not None:
+        message["X-ReadNdraft-Draft-Operation"] = operation_id
     if draft.in_reply_to is not None:
         message["In-Reply-To"] = draft.in_reply_to
         message["References"] = " ".join(draft.references)

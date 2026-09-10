@@ -6,8 +6,10 @@ import pytest
 
 from readndraft_imap_mcp.broker.accounts import AccountConfig
 from readndraft_imap_mcp.drafts import DraftProvenance
+from readndraft_imap_mcp.imap.bodystructure import MimePart
 from readndraft_imap_mcp.imap.client import ImapClient, ImapClientError
 from readndraft_imap_mcp.imap.models import MessageIdentity, SearchFilters
+from readndraft_imap_mcp.mime.parser import get_attachment, plain_text, sanitize_filename
 
 
 class ReadConnection:
@@ -28,7 +30,7 @@ class ReadConnection:
         self.commands.append(args)
         if args[2] == "(UID FLAGS RFC822.SIZE)":
             return "OK", [(b"1 (UID 7 FLAGS () RFC822.SIZE 120)", b"")]
-        assert args[2] == "(BODY.PEEK[] FLAGS)"
+        assert args[2] == "(UID BODY.PEEK[] FLAGS)"
         if self.trailing_flags:
             return "OK", [(b"1 (UID 7 BODY[] {120}", self.raw), b" FLAGS ())"]
         return "OK", [(b"1 (UID 7 FLAGS () BODY[] {120}", self.raw), b")"]
@@ -53,7 +55,103 @@ def test_message_read_uses_body_peek_and_preserves_flags(
 
     assert result.text.strip() == r"body with attacker-controlled FLAGS (\Seen)"
     assert result.flags == ()
-    assert connection.commands[-1][2] == "(BODY.PEEK[] FLAGS)"
+    assert connection.commands[-1][2] == "(UID BODY.PEEK[] FLAGS)"
+
+
+def test_budgeted_message_reuses_its_single_bodystructure_fetch(monkeypatch) -> None:
+    client = object.__new__(ImapClient)
+    calls = 0
+    identity = MessageIdentity("personal", "INBOX", "42", "7")
+    part = MimePart("part-1", "1", "text/plain", "7bit", 4, None, None, None)
+
+    def structure(value):
+        nonlocal calls
+        calls += 1
+        return part, b"Subject: synthetic\r\n", (), 100
+
+    monkeypatch.setattr(client, "_fetch_structure", structure)
+    monkeypatch.setattr(client, "_fetch_section", lambda *args: b"body")
+    message = client.get_message_budgeted(identity, lambda size: size == 24)
+    assert message.text.endswith("body")
+    assert calls == 1
+
+
+class SinglepartStructureConnection:
+    def __init__(self) -> None:
+        self.commands = []
+
+    def select(self, mailbox, readonly=False):
+        assert (mailbox, readonly) == ('"INBOX"', True)
+        return "OK", [b"1"]
+
+    def response(self, name):
+        return name, [b"42"]
+
+    def uid(self, *args):
+        self.commands.append(args)
+        if "BODYSTRUCTURE" in args[2]:
+            return "OK", [
+                (
+                    b'1 (UID 7 FLAGS () RFC822.SIZE 23 BODYSTRUCTURE '
+                    b'("TEXT" "PLAIN" ("CHARSET" "utf-8") NIL NIL "QUOTED-PRINTABLE" 23 1 NIL NIL NIL NIL) '
+                    b'BODY[HEADER.FIELDS] {19}',
+                    b"Subject: simple\r\n\r\n",
+                ),
+                b")",
+            ]
+        assert args == ("FETCH", "7", "(UID BODY.PEEK[1])")
+        return "OK", [(b"1 (UID 7 BODY[1] {23}", b"This was not=\r\n sent.\r\n"), b")"]
+
+
+def test_singlepart_bodystructure_fetches_section_one_instead_of_full_message() -> None:
+    connection = SinglepartStructureConnection()
+    client = ImapClient(AccountConfig("personal", "mail.example.com", 993, "leo@example.com"), "secret")
+    client.connection = connection
+
+    result = client.get_message(MessageIdentity("personal", "INBOX", "42", "7"))
+
+    assert result.text == "This was not sent.\r\n"
+    assert result.headers == {"subject": "simple"}
+    assert ("FETCH", "7", "(UID BODY.PEEK[1])") in connection.commands
+    assert all("BODY.PEEK[]" not in command[2] for command in connection.commands if command[0] == "FETCH")
+
+
+def test_selected_part_preserves_bodystructure_charset_without_top_headers() -> None:
+    part = MimePart(
+        "part-1",
+        "1",
+        "text/plain",
+        "base64",
+        8,
+        None,
+        None,
+        None,
+        content_type_params=(("charset", "iso-8859-1"),),
+    )
+
+    message = ImapClient._part_message(part, b"Y2Fm6Q==")
+
+    assert plain_text(message) == "café"
+
+
+def test_selected_attachment_uses_safe_filename_and_transfer_decoder() -> None:
+    part = MimePart(
+        "part-3",
+        "2",
+        "application/octet-stream",
+        "base64",
+        8,
+        'report".txt\r\nX-Injected: yes',
+        "attachment",
+        None,
+    )
+
+    message = ImapClient._part_message(part, b"dGVzdA==", filename=part.filename)
+    content = get_attachment(message, "part-1")
+
+    assert content.content == b"test"
+    assert content.metadata.filename == sanitize_filename(part.filename)
+    assert message["X-Injected"] is None
 
 
 class MailboxListConnection:
@@ -108,15 +206,8 @@ def test_attachment_filename_search_is_bounded_and_semantic() -> None:
     assert client.search(
         "INBOX", SearchFilters(attachment_filename="report.pdf"), limit=10
     ) == ()
-    assert connection.search_args == (
-        "SEARCH",
-        None,
-        "HEADER",
-        "Content-Disposition",
-        '"report.pdf"',
-        "UID",
-        "1:41",
-    )
+    assert connection.search_args == ("SEARCH", None, "ALL", "UID", "1:41")
+    assert "Content-Disposition" not in connection.search_args
     assert connection.selected == '"INBOX"'
 
 

@@ -14,18 +14,31 @@ from typing import Any, Iterable
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
+from readndraft_imap_mcp.ipc.contract import canonical_tool_schema_digest
+
 SERVER_NAME = "readndraft_dev"
 SUCCESS_MARKER = "READNDRAFT_DEV_MCP_OK"
-EXPECTED_TOOLS = {
-    "list_accounts",
-    "list_mailboxes",
-    "search_emails",
-    "get_email",
-    "save_attachment",
-    "create_draft",
-    "move_email",
-    "move_emails_batch",
-}
+EXPECTED_TOOLS = frozenset(
+    {
+        "list_accounts",
+        "list_mailboxes",
+        "search_emails",
+        "get_email",
+        "get_emails",
+        "get_email_html",
+        "list_attachment_inputs",
+        "save_attachment",
+        "create_draft",
+        "move_email",
+        "update_draft",
+        "set_star",
+        "set_read_state",
+        "set_read_state_batch",
+        "set_star_batch",
+        "move_emails_batch",
+    }
+)
+EXPECTED_TOOL_SCHEMA_DIGEST = "f3d7c9976be9c616ad8a037af83a3b9f84099a70f94c80e815848cd541246e90"
 
 
 def _event_items(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
@@ -39,8 +52,7 @@ def _final_message(items: Iterable[dict[str, Any]]) -> str:
     messages = [
         item.get("text", "")
         for item in items
-        if item.get("type") == "agent_message"
-        and isinstance(item.get("text"), str)
+        if item.get("type") == "agent_message" and isinstance(item.get("text"), str)
     ]
     return messages[-1] if messages else ""
 
@@ -89,13 +101,11 @@ def _required_mcp_overrides(root: Path) -> list[str]:
     }
     result: list[str] = []
     for key, value in values.items():
-        result.extend(
-            ["-c", f"mcp_servers.{SERVER_NAME}.{key}={json.dumps(value)}"]
-        )
+        result.extend(["-c", f"mcp_servers.{SERVER_NAME}.{key}={json.dumps(value)}"])
     return result
 
 
-async def _list_local_tools(root: Path) -> set[str]:
+async def _list_local_tools(root: Path) -> dict[str, dict[str, Any]]:
     parameters = StdioServerParameters(
         command="uv",
         args=["run", "--locked", "--no-sync", "readndraft-imap-mcp", "mcp"],
@@ -103,15 +113,17 @@ async def _list_local_tools(root: Path) -> set[str]:
     )
     async with AsyncExitStack() as stack:
         errlog = stack.enter_context(open(os.devnull, "w", encoding="utf-8"))
-        read_stream, write_stream = await stack.enter_async_context(
-            stdio_client(parameters, errlog=errlog)
-        )
-        session = await stack.enter_async_context(
-            ClientSession(read_stream, write_stream)
-        )
+        read_stream, write_stream = await stack.enter_async_context(stdio_client(parameters, errlog=errlog))
+        session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
         await session.initialize()
         listed = await session.list_tools()
-        return {tool.name for tool in listed.tools}
+        return {
+            tool.name: {
+                "inputSchema": tool.inputSchema,
+                "outputSchema": tool.outputSchema,
+            }
+            for tool in listed.tools
+        }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -148,19 +160,20 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    missing = EXPECTED_TOOLS - tools
-    if missing:
+    if set(tools) != EXPECTED_TOOLS:
         print(
-            "Local readndraft_dev MCP is missing expected tools: "
-            + ", ".join(sorted(missing)),
+            "Local readndraft_dev MCP tool catalog differs from the exact expected set.",
             file=sys.stderr,
         )
         return 1
+    if any(not schema["inputSchema"] or not schema["outputSchema"] for schema in tools.values()):
+        print("Local readndraft_dev MCP returned an incomplete tool schema.", file=sys.stderr)
+        return 1
+    if canonical_tool_schema_digest(tools) != EXPECTED_TOOL_SCHEMA_DIGEST:
+        print("Local readndraft_dev MCP tool schemas differ from the pinned contract.", file=sys.stderr)
+        return 1
 
-    prompt = (
-        "Do not call any tool and do not inspect files. "
-        f"Reply with exactly {SUCCESS_MARKER}."
-    )
+    prompt = f"Do not call any tool and do not inspect files. Reply with exactly {SUCCESS_MARKER}."
     completed = _run(
         [
             codex,

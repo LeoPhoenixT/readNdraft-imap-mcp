@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Attachment-filename search now verifies recursive MIME BODYSTRUCTURE filename
+  metadata under bounded server-search and candidate-inspection budgets. Search
+  pages expose ordered per-target continuation statuses and cursors.
+- Read operations now use validated IMAP BODYSTRUCTURE section fetches when
+  possible, retaining bounded full-message fallback for malformed or unsafe
+  structures. Attachment metadata exposes nullable decoded `size` and nullable
+  transfer-encoded `encoded_size` before download.
+- Split the local IPC surface into contract, client, server, and transport
+  boundaries while retaining `readndraft_imap_mcp.ipc.rpc` compatibility imports.
+- IPC 11 now pins request type/bound schemas and nested successful response
+  records together with operations and parameter names. Draft mutation callers can receive `draft_busy`,
+  `recovery_required`, or `outcome_unknown`; inspect recovery state before retrying.
+
 ## 0.9.0
 
 ### Changed

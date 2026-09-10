@@ -61,6 +61,8 @@ class SearchWindow:
     uid_validity: str
     next_uid: str | None
     has_more: bool
+    # ``next_uid`` is the exclusive scan frontier, never the last result UID.
+    complete: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +79,25 @@ class SearchTarget:
 
 
 @dataclass(frozen=True, slots=True)
+class SearchTargetStatus:
+    account_id: str
+    mailbox: str
+    status: Literal["complete", "partial", "error", "pending"]
+    cursor: str | None = None
+    error: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status == "complete" and (self.cursor is not None or self.error is not None):
+            raise ValueError("complete search target cannot contain a cursor or error")
+        if self.status == "partial" and (self.cursor is None or self.error is not None):
+            raise ValueError("partial search target requires a cursor and no error")
+        if self.status == "error" and self.error is None:
+            raise ValueError("failed search target requires an error")
+        if self.status == "pending" and (self.cursor is not None or self.error is not None):
+            raise ValueError("pending search target cannot contain a cursor or error")
+
+
+@dataclass(frozen=True, slots=True)
 class SearchPage:
     results: tuple[SearchResult, ...]
     errors: tuple[SearchTargetError, ...]
@@ -85,6 +106,7 @@ class SearchPage:
     order: str
     targets_searched: tuple[SearchTarget, ...] = ()
     targets_pending: tuple[SearchTarget, ...] = ()
+    target_statuses: tuple[SearchTargetStatus, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,7 +114,10 @@ class AttachmentMetadata:
     attachment_id: str
     filename: str
     content_type: str
-    size: int
+    # Decoded size is only known after the selected attachment is downloaded.
+    size: int | None
+    # RFC 9051 BODYSTRUCTURE octets are transfer-encoded octets.
+    encoded_size: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,15 +215,9 @@ class MoveResult:
     def __post_init__(self) -> None:
         if not self.destination_mailbox:
             raise ValueError("destination mailbox is required")
-        if (
-            self.destination_identity is not None
-            and self.destination_identity.account_id != self.identity.account_id
-        ):
+        if self.destination_identity is not None and self.destination_identity.account_id != self.identity.account_id:
             raise ValueError("move destination must belong to the source account")
-        if (
-            self.destination_identity is not None
-            and self.destination_identity.mailbox != self.destination_mailbox
-        ):
+        if self.destination_identity is not None and self.destination_identity.mailbox != self.destination_mailbox:
             raise ValueError("move destination identity must match its mailbox")
 
 

@@ -50,6 +50,23 @@ def test_expected_tools_are_metadata_free_to_discover() -> None:
     assert all(isinstance(name, str) for name in smoke.EXPECTED_TOOLS)
 
 
+def test_tool_schema_digest_uses_only_name_and_json_schemas() -> None:
+    tools = {
+        "z": {
+            "inputSchema": {"type": "object"},
+            "outputSchema": {"type": "string"},
+        },
+        "a": {
+            "inputSchema": {"type": "array"},
+            "outputSchema": {"type": "null"},
+        },
+    }
+    assert smoke.canonical_tool_schema_digest(tools) == smoke.canonical_tool_schema_digest(
+        dict(reversed(list(tools.items())))
+    )
+    assert len(smoke.EXPECTED_TOOL_SCHEMA_DIGEST) == 64
+
+
 def test_fresh_session_override_contains_complete_required_transport(tmp_path) -> None:
     values = smoke._required_mcp_overrides(tmp_path.resolve())
     rendered = "\n".join(values)
@@ -83,7 +100,5 @@ def test_repository_skill_documents_safe_local_mcp_workflow() -> None:
     ):
         assert statement in body
 
-    agent_metadata = (SKILL / "agents" / "openai.yaml").read_text(
-        encoding="utf-8"
-    )
+    agent_metadata = (SKILL / "agents" / "openai.yaml").read_text(encoding="utf-8")
     assert "$readndraft-local-mcp-test" in agent_metadata

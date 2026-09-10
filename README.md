@@ -121,17 +121,24 @@ while uv downloads the pinned package. If a stored password has changed, run
 
 - List administratively pinned accounts and mailboxes.
 - Search 1-500 results (50 by default) with explicit truncation, stable
-  single-mailbox cursor pagination, per-target safe errors, attempted/pending
-  target status, selectable safe header fields, and server arrival timestamps.
+  single-mailbox cursor pagination, per-target `complete`, `partial`, `error`,
+  or `pending` status, attempted/pending legacy fields, selectable safe header
+  fields, and server arrival timestamps. Attachment filename matching uses
+  bounded MIME BODYSTRUCTURE metadata, never downloaded attachment payloads.
   Requests above 50 require one account and one mailbox.
 - Read safe headers and preferred plain text without setting the Seen flag.
   HTML-only messages are converted into a bounded, readable plain-text
   representation; `get_email_html` remains available for sanitized rich HTML.
+  When the server supplies a valid MIME BODYSTRUCTURE, these reads fetch only
+  the selected text section; malformed or nested-message structures use the
+  existing bounded full-message fallback.
 - Batch-read plain text for up to 10 selected messages across 2 accounts.
 - Read strictly filtered HTML without loading remote content; remote-resource
   elements, attributes, and CSS are removed, and empty paragraphs are preserved.
 - Save one selected, bounded attachment into a fixed private output directory and
-  return its absolute native-platform path.
+  return its absolute native-platform path. Attachment listings report nullable
+  decoded `size` until a selected attachment is downloaded, plus nullable IMAP
+  transfer-encoded `encoded_size` when BODYSTRUCTURE or exact wire bytes are known.
 - Star/unstar and mark read/unread without replacing unrelated flags.
 - Batch one star or read state across up to 50 selected messages and 3 accounts;
   batches return ordered per-item results.
@@ -360,6 +367,11 @@ the MCP server host's native path format; clients must use that value verbatim.
 Read [SECURITY.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/SECURITY.md)
 for the current security boundary. Security issues should not contain
 credentials or private mail.
+
+IPC 11 pins request validation and nested response records. A `draft_busy`
+result means another update holds the draft lock; `recovery_required` needs
+draft recovery before retrying; `outcome_unknown` means the IMAP write may have
+completed, so inspect the draft state instead of retrying automatically.
 
 ## Development
 

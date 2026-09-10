@@ -28,3 +28,9 @@ automatically retry an ambiguous connection or `broker_error`.
 The same rule applies to moves: a lost response may follow a completed server
 mutation, so search both mailboxes and ask the user to reselect before any new
 move request.
+# IPC 11 draft recovery errors
+
+For `draft_busy`, do not retry concurrently: wait for the current draft update
+to finish. For `recovery_required`, use the draft recovery workflow before
+another update. For `outcome_unknown`, do not assume the mutation failed;
+inspect the draft or mailbox state and then recover deliberately.
