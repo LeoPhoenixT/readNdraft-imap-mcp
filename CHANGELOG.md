@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.10.0
+
 - Attachment-filename search now verifies recursive MIME BODYSTRUCTURE filename
   metadata under bounded server-search and candidate-inspection budgets. Search
   pages expose ordered per-target continuation statuses and cursors.
