@@ -23,6 +23,7 @@ def test_readme_documents_plugin_setup_security_and_support() -> None:
         "allowlisted CSS",
         "never fetched automatically",
         "MCP_MIGRATION_0.10.0.md",
+        "MCP_MIGRATION_0.11.0.md",
         "MCP_MIGRATION_0.9.0.md",
     ):
         assert required in text

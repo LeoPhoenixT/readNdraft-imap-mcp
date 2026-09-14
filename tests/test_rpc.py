@@ -24,6 +24,11 @@ from readndraft_imap_mcp.imap.models import (
     MoveResult,
 )
 from readndraft_imap_mcp.ipc import client as rpc_module
+from readndraft_imap_mcp.ipc.codec import (
+    BROKER_REQUEST_TIMEOUT_SECONDS,
+    BROKER_WATCHDOG_TIMEOUT_SECONDS,
+    RPC_RESPONSE_TIMEOUT_SECONDS,
+)
 from readndraft_imap_mcp.ipc.rpc import (
     BrokerRpcServer,
     IpcBrokerClient,
@@ -35,6 +40,7 @@ from readndraft_imap_mcp.ipc.rpc import (
 )
 from readndraft_imap_mcp.mime.html import AuthoredHtmlError
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
+from readndraft_imap_mcp.safe_error import SafeError
 
 
 class FakeBroker:
@@ -53,15 +59,15 @@ def _frame(operation: str, params: dict) -> bytes:
 
 
 def test_safe_error_passes_through_authored_html_detail() -> None:
-    code, message = _safe_error(AuthoredHtmlError("unsupported draft HTML attribute: ping"))
-    assert code == "invalid_request" and "ping" in message
+    error = _safe_error(AuthoredHtmlError("unsupported draft HTML attribute: ping"))
+    assert error.code == "invalid_request" and "ping" in error.message
 
 
 def test_safe_error_still_redacts_plain_value_error() -> None:
-    assert _safe_error(ValueError("/home/user/secret/path")) == (
-        "invalid_request",
-        "request rejected",
-    )
+    error = _safe_error(ValueError("/home/user/secret/path"))
+    assert error.code == "invalid_request"
+    assert error.message == "request rejected"
+    assert error.scope == "request"
 
 
 SEARCH_FILTERS = {
@@ -77,6 +83,14 @@ SEARCH_FILTERS = {
 }
 
 
+def test_request_and_transport_deadlines_leave_cleanup_headroom() -> None:
+    assert (
+        BROKER_REQUEST_TIMEOUT_SECONDS,
+        BROKER_WATCHDOG_TIMEOUT_SECONDS,
+        RPC_RESPONSE_TIMEOUT_SECONDS,
+    ) == (30, 35, 45)
+
+
 @pytest.mark.parametrize(
     ("exception", "code"),
     ((DraftBusyError("private"), "draft_busy"), (DraftRecoveryRequiredError("private"), "recovery_required")),
@@ -87,21 +101,73 @@ def test_rpc_maps_draft_recovery_errors_without_details(exception, code) -> None
             raise exception
 
     response = json.loads(BrokerRpcServer(FailingBroker(), "unused", b"x").handle_frame(_frame("list_accounts", {})))
-    assert response["error"]["type"] == code
+    assert response["error"]["code"] == code
     assert "private" not in repr(response)
 
 
-def test_async_write_transport_loss_is_outcome_unknown() -> None:
+@pytest.mark.parametrize("code", ["connection_error", "timeout"])
+def test_async_write_transport_loss_or_timeout_is_outcome_unknown(code) -> None:
     class LostClient(IpcBrokerClient):
         def __init__(self):
             pass
 
         def _request_sync(self, operation, params):
-            raise RpcError("private transport detail", code="connection_error")
+            raise RpcError("private transport detail", code=code)
 
     with pytest.raises(RpcError, match="outcome_unknown") as exc:
         asyncio.run(LostClient().update_draft("personal", "a" * 32, to=("a@example.com",), subject="s", body="b"))
     assert "private" not in str(exc.value)
+
+
+def test_pre_execution_write_rate_limit_remains_definite() -> None:
+    class LimitedClient(IpcBrokerClient):
+        def __init__(self):
+            pass
+
+        def _request_sync(self, operation, params):
+            raise RpcError(
+                "account task rate limit exceeded",
+                code="rate_limited",
+                scope="account",
+                reason="task_rate",
+                retry_after_seconds=2,
+            )
+
+    with pytest.raises(RpcError) as rejected:
+        asyncio.run(
+            LimitedClient().update_draft(
+                "personal", "a" * 32, to=("a@example.com",), subject="s", body="b"
+            )
+        )
+    assert rejected.value.code == "rate_limited"
+    assert rejected.value.retry_after_seconds == 2
+
+
+def test_nested_safe_error_decodes_with_all_structured_fields() -> None:
+    class StructuredClient(IpcBrokerClient):
+        def __init__(self):
+            pass
+
+        async def _request(self, operation, params):
+            return [
+                {
+                    "account_id": "personal",
+                    "ok": False,
+                    "mailboxes": [],
+                    "error": {
+                        "code": "rate_limited",
+                        "message": "account task rate limit exceeded",
+                        "scope": "account",
+                        "reason": "task_rate",
+                        "retry_after_seconds": 3,
+                    },
+                }
+            ]
+
+    result = asyncio.run(StructuredClient().list_mailboxes_batch(("personal",)))
+    assert result[0].error == SafeError(
+        "rate_limited", "account task rate limit exceeded", "account", "task_rate", 3
+    )
 
 
 def test_rpc_health_and_account_list_are_json_only() -> None:
@@ -204,7 +270,7 @@ def test_rpc_parameter_rejection_echoes_valid_request_id() -> None:
 
     assert response["request_id"] == request_id
     assert response["ok"] is False
-    assert response["error"]["type"] == "invalid_request"
+    assert response["error"]["code"] == "invalid_request"
 
 
 @pytest.mark.parametrize(
@@ -245,7 +311,7 @@ def test_rpc_rejects_malformed_frames_before_broker_dispatch(operation: str, par
     )
 
     assert response["ok"] is False
-    assert response["error"]["type"] == "invalid_request"
+    assert response["error"]["code"] == "invalid_request"
 
 
 @pytest.mark.parametrize("filename", ("報告.pdf", "résumé.txt", "招待状（最終版）.pdf"))
@@ -357,7 +423,7 @@ def test_rpc_rejects_type_confused_writes() -> None:
     ):
         response = json.loads(server.handle_frame(_frame(operation, params)))
         assert response["ok"] is False
-        assert response["error"]["type"] == "invalid_request"
+        assert response["error"]["code"] == "invalid_request"
 
 
 def test_rpc_accepts_optional_html_body() -> None:
@@ -441,7 +507,7 @@ def test_rpc_move_contract_is_exact_and_serializes_results() -> None:
     ):
         rejected = json.loads(server.handle_frame(_frame("move_email", params)))
         assert rejected["ok"] is False
-        assert rejected["error"]["type"] == "invalid_request"
+        assert rejected["error"]["code"] == "invalid_request"
 
 
 def test_rpc_does_not_return_internal_exception_details() -> None:
@@ -456,8 +522,11 @@ def test_rpc_does_not_return_internal_exception_details() -> None:
     )
 
     assert response["error"] == {
-        "type": "broker_error",
+        "code": "broker_error",
         "message": "broker request failed",
+        "scope": "request",
+        "reason": None,
+        "retry_after_seconds": None,
     }
     assert "private" not in repr(response)
 
@@ -466,7 +535,7 @@ def test_rpc_does_not_return_internal_exception_details() -> None:
     ("exception", "code", "message"),
     (
         (TimeoutError("private timeout detail"), "timeout", "broker request timed out"),
-        (RequestQuotaError("private quota detail"), "rate_limited", "account request limit exceeded"),
+        (RequestQuotaError("private quota detail"), "rate_limited", "account task rate limit exceeded"),
         (ImapClientError("private IMAP detail"), "imap_error", "IMAP operation failed"),
         (
             ImapMovePartialError("private partial detail"),
@@ -487,7 +556,12 @@ def test_rpc_returns_typed_safe_operational_errors(exception, code, message) -> 
         )
     )
 
-    assert response["error"] == {"type": code, "message": message}
+    assert response["error"]["code"] == code
+    assert response["error"]["message"] == message
+    assert response["error"]["scope"] in {"request", "account"}
+    assert set(response["error"]) == {
+        "code", "message", "scope", "reason", "retry_after_seconds"
+    }
     assert "private" not in repr(response)
 
 

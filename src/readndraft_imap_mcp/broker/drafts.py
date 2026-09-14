@@ -31,7 +31,6 @@ class _Execution(Protocol):
 
     async def _client_call(
         self, account_id: str, operation: Callable[[ImapClient], T], *, response_timeout: bool = True,
-        quota_cost: int = 1,
     ) -> T: ...
 
 
@@ -91,17 +90,22 @@ class DraftService:
         references: tuple[str, ...],
         message_id: str | None = None,
         operation_id: str | None = None,
+        prepared: PreparedDraft | None = None,
     ) -> tuple[bytes, str, PreparedDraft]:
-        draft = prepare_draft(
-            to=to,
-            cc=cc,
-            bcc=bcc,
-            subject=subject,
-            body=body,
-            html_body=html_body,
-            attachments=self._prepare_attachments(attachment_names),
-            in_reply_to=in_reply_to,
-            references=references,
+        draft = (
+            prepare_draft(
+                to=to,
+                cc=cc,
+                bcc=bcc,
+                subject=subject,
+                body=body,
+                html_body=html_body,
+                attachments=self._prepare_attachments(attachment_names),
+                in_reply_to=in_reply_to,
+                references=references,
+            )
+            if prepared is None
+            else replace(prepared, in_reply_to=in_reply_to, references=references)
         )
         raw, message_id = build_draft_message(
             account.effective_sender_address,
@@ -133,19 +137,32 @@ class DraftService:
         account = self._execution._current_accounts().require_enabled(account_id)
         if reply_to_message is not None and reply_to_message.account_id != account_id:
             raise PermissionError("reply source belongs to another account")
-        in_reply_to: str | None = None
-        references: tuple[str, ...] = ()
-        if reply_to_message is not None:
-            source_id, source_references = await self._execution._client_call(
-                account_id, lambda client: client.get_threading_headers(reply_to_message)
-            )
-            in_reply_to, references = reply_thread(source_id, source_references)
         started = perf_counter()
         stage = "draft_build"
         raw: bytes | None = None
         mailbox = ""
         uid = ""
+        in_reply_to: str | None = None
+        references: tuple[str, ...] = ()
         try:
+            # Validate every caller-controlled draft field and attachment before
+            # task admission. Reply metadata is added only after this succeeds.
+            draft = prepare_draft(
+                to=to,
+                cc=cc,
+                bcc=bcc,
+                subject=subject,
+                body=body,
+                html_body=html_body,
+                attachments=self._prepare_attachments(attachment_names),
+            )
+            if reply_to_message is not None:
+                stage = "threading_lookup"
+                source_id, source_references = await self._execution._client_call(
+                    account_id, lambda client: client.get_threading_headers(reply_to_message)
+                )
+                in_reply_to, references = reply_thread(source_id, source_references)
+            stage = "draft_build"
             raw, message_id, draft = self._build_draft(
                 account,
                 to=to,
@@ -157,6 +174,7 @@ class DraftService:
                 attachment_names=attachment_names,
                 in_reply_to=in_reply_to,
                 references=references,
+                prepared=draft,
             )
             stage = "imap_append"
             result = await self._execution._client_call(

@@ -12,7 +12,7 @@
 - `target_statuses` is ordered exactly as the requested targets. A `partial`
   target has its own cursor: continue it as a later one-target search using the
   unchanged filters. `pending` has not been scanned. `complete` has no cursor;
-  `error` carries only a safe category and can retain an input cursor.
+  `error` carries a structured safe code and can retain an input cursor.
 - `targets_searched` lists attempted raw account/mailbox targets, including
   targets with errors. `targets_pending` lists targets skipped because the page
   limit was already full. Never describe a pending target as searched.
@@ -35,7 +35,8 @@
 - A flag result with `changed: false` means the message already had the requested
   state. Report success without repeating the mutation.
 - Batch results preserve input order. `ok: true` contains a message or semantic
-  flag change. `ok: false` contains only a safe error category. Count both,
+  flag change. `ok: false` contains a structured `SafeError`; inspect its
+  `code`. Count both,
   identify failed identities without dropping UIDVALIDITY, and do not imply the
   successful items were rolled back.
 - A successful move permanently invalidates its source identity. Its

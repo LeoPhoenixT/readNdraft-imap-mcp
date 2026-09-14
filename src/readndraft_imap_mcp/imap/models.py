@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
+from readndraft_imap_mcp.safe_error import SafeError
+
 
 @dataclass(frozen=True, slots=True)
 class Mailbox:
@@ -69,7 +71,7 @@ class SearchWindow:
 class SearchTargetError:
     account_id: str
     mailbox: str
-    error: str
+    error: SafeError
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +86,7 @@ class SearchTargetStatus:
     mailbox: str
     status: Literal["complete", "partial", "error", "pending"]
     cursor: str | None = None
-    error: str | None = None
+    error: SafeError | None = None
 
     def __post_init__(self) -> None:
         if self.status == "complete" and (self.cursor is not None or self.error is not None):
@@ -137,7 +139,7 @@ class MailboxBatchResult:
     account_id: str
     ok: bool
     mailboxes: tuple[Mailbox, ...] = ()
-    error: str | None = None
+    error: SafeError | None = None
 
     def __post_init__(self) -> None:
         if self.ok:
@@ -198,7 +200,7 @@ class BatchFlagChange:
     identity: MessageIdentity
     ok: bool
     change: FlagChange | None = None
-    error: str | None = None
+    error: SafeError | None = None
 
     def __post_init__(self) -> None:
         if self.ok != (self.change is not None and self.error is None):
@@ -226,7 +228,7 @@ class BatchMoveResult:
     identity: MessageIdentity
     ok: bool
     move: MoveResult | None = None
-    error: str | None = None
+    error: SafeError | None = None
 
     def __post_init__(self) -> None:
         if self.ok != (self.move is not None and self.error is None):
@@ -238,7 +240,7 @@ class BatchMessageContent:
     identity: MessageIdentity
     ok: bool
     message: MessageContent | None = None
-    error: str | None = None
+    error: SafeError | None = None
 
     def __post_init__(self) -> None:
         if self.ok != (self.message is not None and self.error is None):

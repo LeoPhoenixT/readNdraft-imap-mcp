@@ -6,6 +6,8 @@ import json
 from hashlib import sha256
 from typing import Any
 
+from readndraft_imap_mcp.safe_error import SafeError
+
 MAX_FRAME_BYTES = 8 * 1024 * 1024
 ALLOWED_OPERATIONS = frozenset(
     {
@@ -64,9 +66,33 @@ _PARAMETERS = {
 class RpcError(RuntimeError):
     """Safe error returned by the local broker RPC boundary."""
 
-    def __init__(self, message: str, *, code: str = "broker_error") -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "broker_error",
+        scope: str = "request",
+        reason: str | None = None,
+        retry_after_seconds: int | None = None,
+    ) -> None:
+        self.error = SafeError(  # type: ignore[arg-type]
+            code, message, scope, reason, retry_after_seconds
+        )
         self.code = code
+        self.scope = scope
+        self.reason = reason
+        self.retry_after_seconds = retry_after_seconds
         super().__init__(f"{code}: {message}")
+
+    @classmethod
+    def from_safe_error(cls, error: SafeError) -> RpcError:
+        return cls(
+            error.message,
+            code=error.code,
+            scope=error.scope,
+            reason=error.reason,
+            retry_after_seconds=error.retry_after_seconds,
+        )
 
 
 S = {"type": "string"}
@@ -92,19 +118,43 @@ def U(schema: dict[str, Any]) -> dict[str, Any]:
 
 # Exact dictionaries produced by dataclasses.asdict at the IPC boundary.
 SCHEMA_DEFINITIONS = {
+    "SafeError": O(
+        {
+            "code": {
+                "type": "string",
+                "enum": [
+                    "partial_move", "permission_denied", "not_found", "invalid_request",
+                    "timeout", "rate_limited", "draft_busy", "recovery_required",
+                    "imap_error", "connection_error", "broker_error", "outcome_unknown",
+                ],
+            },
+            "message": S,
+            "scope": {"type": "string", "enum": ["request", "item", "account", "broker", "client"]},
+            "reason": U(
+                {
+                    "type": "string",
+                    "enum": [
+                        "task_rate", "session_queue_timeout", "imap_worker_capacity",
+                        "ipc_helper_capacity", "request_deadline", "transport_loss",
+                    ],
+                }
+            ),
+            "retry_after_seconds": U(INTEGER),
+        }
+    ),
     "Account": O(
         {"id": S, "username": S, "host": S, "port": INTEGER, "enabled": B, "sender_address": U(S), "sender_name": U(S)}
     ),
     "Mailbox": O({"name": S, "delimiter": U(S), "flags": A(S), "display_name": U(S)}),
     "MessageIdentity": O({"account_id": S, "mailbox": S, "uid_validity": S, "uid": S}),
     "SearchTarget": O({"account_id": S, "mailbox": S}),
-    "SearchTargetError": O({"account_id": S, "mailbox": S, "error": S}),
+    "SearchTargetError": O({"account_id": S, "mailbox": S, "error": {"$ref": "SafeError"}}),
     "SearchTargetStatus": O({
         "account_id": S,
         "mailbox": S,
         "status": {"type": "string", "enum": ["complete", "partial", "error", "pending"]},
         "cursor": U(S),
-        "error": U(S),
+        "error": U({"$ref": "SafeError"}),
     }),
     "AttachmentMetadata": O(
         {"attachment_id": S, "filename": S, "content_type": S, "size": U(INTEGER), "encoded_size": U(INTEGER)}
@@ -146,7 +196,14 @@ SCHEMA_DEFINITIONS = {
             "text_truncated": B,
         }
     ),
-    "MailboxBatchResult": O({"account_id": S, "ok": B, "mailboxes": A({"$ref": "Mailbox"}), "error": U(S)}),
+    "MailboxBatchResult": O(
+        {
+            "account_id": S,
+            "ok": B,
+            "mailboxes": A({"$ref": "Mailbox"}),
+            "error": U({"$ref": "SafeError"}),
+        }
+    ),
     "HtmlContent": O({"identity": {"$ref": "MessageIdentity"}, "html": S, "flags": A(S)}),
     "DraftCreationResult": O(
         {
@@ -182,7 +239,12 @@ SCHEMA_DEFINITIONS = {
         }
     ),
     "BatchFlagChange": O(
-        {"identity": {"$ref": "MessageIdentity"}, "ok": B, "change": U({"$ref": "FlagChange"}), "error": U(S)}
+        {
+            "identity": {"$ref": "MessageIdentity"},
+            "ok": B,
+            "change": U({"$ref": "FlagChange"}),
+            "error": U({"$ref": "SafeError"}),
+        }
     ),
     "MoveResult": O(
         {
@@ -193,10 +255,20 @@ SCHEMA_DEFINITIONS = {
         }
     ),
     "BatchMoveResult": O(
-        {"identity": {"$ref": "MessageIdentity"}, "ok": B, "move": U({"$ref": "MoveResult"}), "error": U(S)}
+        {
+            "identity": {"$ref": "MessageIdentity"},
+            "ok": B,
+            "move": U({"$ref": "MoveResult"}),
+            "error": U({"$ref": "SafeError"}),
+        }
     ),
     "BatchMessageContent": O(
-        {"identity": {"$ref": "MessageIdentity"}, "ok": B, "message": U({"$ref": "MessageContent"}), "error": U(S)}
+        {
+            "identity": {"$ref": "MessageIdentity"},
+            "ok": B,
+            "message": U({"$ref": "MessageContent"}),
+            "error": U({"$ref": "SafeError"}),
+        }
     ),
 }
 RESPONSE_SCHEMA_REGISTRY = SCHEMA_DEFINITIONS
@@ -210,6 +282,28 @@ RESPONSE_SCHEMAS = {
             "python_version": S,
             "python_implementation": S,
             "pid": INTEGER,
+            "resource_limits": O(
+                {
+                    "task_bucket_capacity": INTEGER,
+                    "task_refill_per_second": {"type": "number"},
+                    "account_sessions": INTEGER,
+                    "imap_workers": INTEGER,
+                    "waiting_imap_work": INTEGER,
+                }
+            ),
+            "resource_usage": O(
+                {
+                    "active_sessions": INTEGER,
+                    "queued_session_requests": INTEGER,
+                    "rejections": O(
+                        {
+                            "task_rate": INTEGER,
+                            "session_queue_timeout": INTEGER,
+                            "imap_worker_capacity": INTEGER,
+                        }
+                    ),
+                }
+            ),
         }
     ),
     "shutdown": O({"shutdown": B}),

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import imaplib
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 from readndraft_imap_mcp.drafts import DraftBusyError, DraftRecoveryRequiredError
 from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
 from readndraft_imap_mcp.imap.models import MessageIdentity
+from readndraft_imap_mcp.safe_error import SafeError, SafeErrorScope
 
 from .limits import RequestQuotaError
 
@@ -19,31 +21,49 @@ class BatchItemOutcome(Generic[T]):
     """One bounded batch result with a deliberately non-sensitive error category."""
 
     value: T | None = None
-    error: str | None = None
+    error: SafeError | None = None
 
 
-def batch_error(exc: Exception) -> str:
+def batch_error(
+    exc: Exception,
+    *,
+    scope: SafeErrorScope = "item",
+    outcome_unknown: bool = False,
+) -> SafeError:
+    if outcome_unknown and isinstance(exc, (TimeoutError, OSError, imaplib.IMAP4.abort)):
+        return SafeError(
+            "outcome_unknown",
+            "write outcome is unknown; do not retry automatically",
+            scope,
+            "request_deadline" if isinstance(exc, TimeoutError) else "transport_loss",
+        )
     if isinstance(exc, ImapMovePartialError):
-        return "partial_move"
+        return SafeError("partial_move", "move may have copied the message; inspect both mailboxes", scope)
     if isinstance(exc, PermissionError):
-        return "permission_denied"
+        return SafeError("permission_denied", "request denied", scope)
     if isinstance(exc, KeyError):
-        return "not_found"
+        return SafeError("not_found", "requested resource was not found", scope)
     if isinstance(exc, ValueError):
-        return "invalid_request"
-    if isinstance(exc, TimeoutError):
-        return "timeout"
+        return SafeError("invalid_request", "request rejected", scope)
     if isinstance(exc, RequestQuotaError):
-        return "rate_limited"
+        return SafeError(
+            exc.code,  # type: ignore[arg-type]
+            "account task rate limit exceeded" if exc.reason == "task_rate" else "request capacity exceeded",
+            "account" if exc.reason in {"task_rate", "session_queue_timeout"} else "broker",
+            exc.reason,  # type: ignore[arg-type]
+            exc.retry_after_seconds,
+        )
+    if isinstance(exc, TimeoutError):
+        return SafeError("timeout", "broker request timed out", scope, "request_deadline")
     if isinstance(exc, DraftBusyError):
-        return "draft_busy"
+        return SafeError("draft_busy", "draft update is already in progress", scope)
     if isinstance(exc, DraftRecoveryRequiredError):
-        return "recovery_required"
+        return SafeError("recovery_required", "draft update recovery is required", scope)
     if isinstance(exc, ImapClientError):
-        return "imap_error"
-    if isinstance(exc, OSError):
-        return "connection_error"
-    return "broker_error"
+        return SafeError("imap_error", "IMAP operation failed", scope)
+    if isinstance(exc, (OSError, imaplib.IMAP4.abort)):
+        return SafeError("connection_error", "mail server connection failed", scope, "transport_loss")
+    return SafeError("broker_error", "broker request failed", scope)
 
 
 def validate_identity_batch(

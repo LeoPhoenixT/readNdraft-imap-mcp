@@ -38,7 +38,7 @@ EXPECTED_TOOLS = frozenset(
         "move_emails_batch",
     }
 )
-EXPECTED_TOOL_SCHEMA_DIGEST = "f3d7c9976be9c616ad8a037af83a3b9f84099a70f94c80e815848cd541246e90"
+EXPECTED_TOOL_SCHEMA_DIGEST = "337e10a8714f548a320e49078dc9f0714921653c37ac61a3b6af83ef264349f8"
 
 
 def _event_items(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:

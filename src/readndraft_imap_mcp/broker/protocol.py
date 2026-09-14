@@ -19,6 +19,29 @@ class HealthRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class ResourceLimits:
+    task_bucket_capacity: int = 120
+    task_refill_per_second: float = 2.0
+    account_sessions: int = 2
+    imap_workers: int = 8
+    waiting_imap_work: int = 16
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceRejections:
+    task_rate: int = 0
+    session_queue_timeout: int = 0
+    imap_worker_capacity: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceUsage:
+    active_sessions: int = 0
+    queued_session_requests: int = 0
+    rejections: ResourceRejections = ResourceRejections()
+
+
+@dataclass(frozen=True, slots=True)
 class HealthResponse:
     ok: Literal[True] = True
     status: Literal["healthy"] = "healthy"
@@ -27,8 +50,10 @@ class HealthResponse:
     python_version: str = platform.python_version()
     python_implementation: str = platform.python_implementation()
     pid: int = os.getpid()
+    resource_limits: ResourceLimits = ResourceLimits()
+    resource_usage: ResourceUsage = ResourceUsage()
 
-    def to_dict(self) -> dict[str, str | bool | int]:
+    def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 

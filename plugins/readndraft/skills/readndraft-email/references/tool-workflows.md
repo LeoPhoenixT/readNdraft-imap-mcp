@@ -59,7 +59,7 @@ identities across at most three accounts and one desired state. Tell the user
 the intended count and state and obtain direct user confirmation. The operation
 is non-atomic: report each failure, retain successful results, and retry only
 failed identities the user still wants changed after confirming the new batch.
-Never retry an ambiguous connection or `broker_error` automatically.
+Never retry `outcome_unknown` automatically; reconcile mailbox state first.
 
 ## Draft creation and update
 
@@ -109,5 +109,5 @@ COPYUID before it marks and UID-expunges only the selected source UID; never
 request separate copy, deleted-flag, expunge, or raw-IMAP tools. Use
 `destination_identity` only when returned; otherwise search the destination and
 require unambiguous reselection. On `partial_move`, connection failure,
-`broker_error`, or any ambiguous outcome, inspect both mailboxes and never retry
+`outcome_unknown`, or any ambiguous outcome, inspect both mailboxes and never retry
 automatically because the destination copy or completed move may already exist.

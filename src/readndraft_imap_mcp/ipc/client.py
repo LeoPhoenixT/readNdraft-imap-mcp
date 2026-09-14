@@ -31,15 +31,29 @@ from readndraft_imap_mcp.imap.models import (
     SearchTargetError,
     SearchTargetStatus,
 )
+from readndraft_imap_mcp.safe_error import SafeError
 
 from .codec import (
     _IPC_HELPER_CAPACITY,
     MAX_FRAME_BYTES,
     RPC_RESPONSE_TIMEOUT_SECONDS,
-    RpcError,
     _encode,
     _filters_to_json,
     _request_frame,
+)
+from .contract import RpcError
+
+_WRITE_OPERATIONS = frozenset(
+    {
+        "create_draft",
+        "update_draft",
+        "set_star",
+        "set_read_state",
+        "set_star_batch",
+        "set_read_state_batch",
+        "move_email",
+        "move_emails_batch",
+    }
 )
 
 
@@ -51,7 +65,12 @@ class IpcBrokerClient:
 
     def _request_sync(self, operation: str, params: dict[str, Any]) -> Any:
         if not _IPC_HELPER_CAPACITY.acquire(blocking=False):
-            raise RpcError("broker request capacity exceeded", code="rate_limited")
+            raise RpcError(
+                "broker request capacity exceeded",
+                code="rate_limited",
+                scope="client",
+                reason="ipc_helper_capacity",
+            )
         completed = threading.Event()
         cancelled = threading.Event()
         result: list[Any] = []
@@ -69,14 +88,41 @@ class IpcBrokerClient:
         threading.Thread(target=transport, daemon=True, name="readndraft-ipc-client").start()
         if not completed.wait(RPC_RESPONSE_TIMEOUT_SECONDS):
             cancelled.set()
-            raise TimeoutError("broker connection deadline expired")
+            raise RpcError(
+                "broker request timed out",
+                code="timeout",
+                scope="client",
+                reason="request_deadline",
+            )
         if failure:
-            raise failure[0]
+            exc = failure[0]
+            if isinstance(exc, RpcError):
+                raise exc
+            if isinstance(exc, TimeoutError):
+                raise RpcError(
+                    "broker request timed out",
+                    code="timeout",
+                    scope="client",
+                    reason="request_deadline",
+                ) from exc
+            if isinstance(exc, (EOFError, OSError)):
+                raise RpcError(
+                    "broker transport connection failed",
+                    code="connection_error",
+                    scope="client",
+                    reason="transport_loss",
+                ) from exc
+            raise RpcError("broker request failed", scope="client") from exc
         return result[0]
 
     def _connect_bounded(self, timeout: float = RPC_RESPONSE_TIMEOUT_SECONDS):
         if not _IPC_HELPER_CAPACITY.acquire(blocking=False):
-            raise RpcError("broker request capacity exceeded", code="rate_limited")
+            raise RpcError(
+                "broker request capacity exceeded",
+                code="rate_limited",
+                scope="client",
+                reason="ipc_helper_capacity",
+            )
         completed = threading.Event()
         cancelled = threading.Event()
         result: list[Any] = []
@@ -105,7 +151,12 @@ class IpcBrokerClient:
 
     def _initialize_lease(self, request: dict[str, Any]):
         if not _IPC_HELPER_CAPACITY.acquire(blocking=False):
-            raise RpcError("broker request capacity exceeded", code="rate_limited")
+            raise RpcError(
+                "broker request capacity exceeded",
+                code="rate_limited",
+                scope="client",
+                reason="ipc_helper_capacity",
+            )
         deadline = time.monotonic() + RPC_RESPONSE_TIMEOUT_SECONDS
         done = threading.Event()
         cancelled = threading.Event()
@@ -163,17 +214,11 @@ class IpcBrokerClient:
                 # Broker rejected the frame before it could echo the id; the
                 # real error is more useful than a correlation complaint.
                 error = response.get("error", {})
-                raise RpcError(
-                    str(error.get("message", "broker request failed")),
-                    code=str(error.get("type", "broker_error")),
-                )
+                raise RpcError.from_safe_error(_safe_error_from_json(error))
             raise RpcError("broker response request_id mismatch")
         if response.get("ok") is not True:
             error = response.get("error", {})
-            raise RpcError(
-                str(error.get("message", "broker request failed")),
-                code=str(error.get("type", "broker_error")),
-            )
+            raise RpcError.from_safe_error(_safe_error_from_json(error))
         return response["result"]
 
     async def _request(self, operation: str, params: dict[str, Any]) -> Any:
@@ -185,35 +230,42 @@ class IpcBrokerClient:
                 RPC_RESPONSE_TIMEOUT_SECONDS,
             )
         except TimeoutError as exc:
-            if operation in {
-                "create_draft",
-                "update_draft",
-                "set_star",
-                "set_read_state",
-                "set_star_batch",
-                "set_read_state_batch",
-                "move_email",
-                "move_emails_batch",
-            }:
-                raise RpcError("write outcome is unknown; do not retry automatically", code="outcome_unknown") from exc
-            raise RpcError("broker request timed out", code="timeout") from exc
+            if operation in _WRITE_OPERATIONS:
+                raise RpcError(
+                    "write outcome is unknown; do not retry automatically",
+                    code="outcome_unknown",
+                    scope="client",
+                    reason="request_deadline",
+                ) from exc
+            raise RpcError(
+                "broker request timed out",
+                code="timeout",
+                scope="client",
+                reason="request_deadline",
+            ) from exc
         except RpcError as exc:
-            if (
-                operation
-                in {
-                    "create_draft",
-                    "update_draft",
-                    "set_star",
-                    "set_read_state",
-                    "set_star_batch",
-                    "set_read_state_batch",
-                    "move_email",
-                    "move_emails_batch",
-                }
-                and exc.code == "connection_error"
-            ):
-                raise RpcError("write outcome is unknown; do not retry automatically", code="outcome_unknown") from exc
+            if operation in _WRITE_OPERATIONS and exc.code in {"timeout", "connection_error"}:
+                raise RpcError(
+                    "write outcome is unknown; do not retry automatically",
+                    code="outcome_unknown",
+                    scope=exc.scope,
+                    reason=exc.reason or ("request_deadline" if exc.code == "timeout" else "transport_loss"),
+                ) from exc
             raise
+        except (EOFError, OSError) as exc:
+            if operation in _WRITE_OPERATIONS:
+                raise RpcError(
+                    "write outcome is unknown; do not retry automatically",
+                    code="outcome_unknown",
+                    scope="client",
+                    reason="transport_loss",
+                ) from exc
+            raise RpcError(
+                "mail server connection failed",
+                code="connection_error",
+                scope="client",
+                reason="transport_loss",
+            ) from exc
 
     def list_accounts(self):
         return self._request_sync("list_accounts", {})
@@ -239,7 +291,7 @@ class IpcBrokerClient:
                 account_id=item["account_id"],
                 ok=item["ok"],
                 mailboxes=tuple(Mailbox(**mailbox) for mailbox in item["mailboxes"]),
-                error=item["error"],
+                error=_optional_safe_error(item["error"]),
             )
             for item in await self._request("list_mailboxes", {"account_ids": list(account_ids)})
         )
@@ -286,13 +338,25 @@ class IpcBrokerClient:
                 )
                 for item in result["results"]
             ),
-            errors=tuple(SearchTargetError(**item) for item in result["errors"]),
+            errors=tuple(
+                SearchTargetError(item["account_id"], item["mailbox"], _safe_error_from_json(item["error"]))
+                for item in result["errors"]
+            ),
             next_cursor=result["next_cursor"],
             truncated=result["truncated"],
             order=result["order"],
             targets_searched=tuple(SearchTarget(**item) for item in result["targets_searched"]),
             targets_pending=tuple(SearchTarget(**item) for item in result["targets_pending"]),
-            target_statuses=tuple(SearchTargetStatus(**item) for item in result["target_statuses"]),
+            target_statuses=tuple(
+                SearchTargetStatus(
+                    item["account_id"],
+                    item["mailbox"],
+                    item["status"],
+                    cursor=item["cursor"],
+                    error=_optional_safe_error(item["error"]),
+                )
+                for item in result["target_statuses"]
+            ),
         )
 
     async def get_email(self, identity, max_text_chars=None):
@@ -441,7 +505,7 @@ def _batch_move_result(item: dict[str, Any]) -> BatchMoveResult:
         identity=MessageIdentity(**item["identity"]),
         ok=item["ok"],
         move=_move_result(item["move"]) if item["move"] is not None else None,
-        error=item["error"],
+        error=_optional_safe_error(item["error"]),
     )
 
 
@@ -450,7 +514,7 @@ def _batch_flag_change(item: dict[str, Any]) -> BatchFlagChange:
         identity=MessageIdentity(**item["identity"]),
         ok=item["ok"],
         change=_flag_change(item["change"]) if item["change"] is not None else None,
-        error=item["error"],
+        error=_optional_safe_error(item["error"]),
     )
 
 
@@ -472,5 +536,24 @@ def _batch_message(item: dict[str, Any]) -> BatchMessageContent:
         identity=MessageIdentity(**item["identity"]),
         ok=item["ok"],
         message=_message(item["message"]) if item["message"] is not None else None,
-        error=item["error"],
+        error=_optional_safe_error(item["error"]),
     )
+
+
+def _safe_error_from_json(value: object) -> SafeError:
+    if not isinstance(value, dict) or set(value) != {
+        "code",
+        "message",
+        "scope",
+        "reason",
+        "retry_after_seconds",
+    }:
+        raise RpcError("invalid broker error response")
+    try:
+        return SafeError(**value)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise RpcError("invalid broker error response") from exc
+
+
+def _optional_safe_error(value: object) -> SafeError | None:
+    return None if value is None else _safe_error_from_json(value)

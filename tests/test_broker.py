@@ -41,6 +41,22 @@ def test_health_contract_is_restricted_to_health() -> None:
         "python_version": platform.python_version(),
         "python_implementation": platform.python_implementation(),
         "pid": os.getpid(),
+        "resource_limits": {
+            "task_bucket_capacity": 120,
+            "task_refill_per_second": 2.0,
+            "account_sessions": 2,
+            "imap_workers": 8,
+            "waiting_imap_work": 16,
+        },
+        "resource_usage": {
+            "active_sessions": 0,
+            "queued_session_requests": 0,
+            "rejections": {
+                "task_rate": 0,
+                "session_queue_timeout": 0,
+                "imap_worker_capacity": 0,
+            },
+        },
     }
 
 

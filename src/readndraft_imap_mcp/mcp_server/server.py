@@ -41,6 +41,9 @@ broker uses native UID MOVE or a private UIDPLUS copy/delete/UID-expunge fallbac
 no copy, delete, expunge, arbitrary-flag, or raw-protocol tool is exposed.
 The server has no send, submission, ordinary-message deletion, raw protocol, account
 configuration, or credential operations.
+Errors are structured: inspect error.code, not message text. A rate_limited
+error is safe to retry after retry_after_seconds when present. Never
+automatically retry a write with outcome_unknown; reconcile mailbox state first.
 """.strip()
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 REVERSIBLE_WRITE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
@@ -78,11 +81,39 @@ class MailboxOutput(BaseModel):
     flags: list[str]
 
 
+class SafeErrorOutput(BaseModel):
+    code: Literal[
+        "partial_move",
+        "permission_denied",
+        "not_found",
+        "invalid_request",
+        "timeout",
+        "rate_limited",
+        "draft_busy",
+        "recovery_required",
+        "imap_error",
+        "connection_error",
+        "broker_error",
+        "outcome_unknown",
+    ]
+    message: str
+    scope: Literal["request", "item", "account", "broker", "client"]
+    reason: Literal[
+        "task_rate",
+        "session_queue_timeout",
+        "imap_worker_capacity",
+        "ipc_helper_capacity",
+        "request_deadline",
+        "transport_loss",
+    ] | None
+    retry_after_seconds: int | None
+
+
 class MailboxBatchOutput(BaseModel):
     account_id: str
     ok: bool
     mailboxes: list[MailboxOutput]
-    error: str | None
+    error: SafeErrorOutput | None
 
 
 class SearchTargetInput(BaseModel):
@@ -101,7 +132,7 @@ class SearchResultOutput(BaseModel):
 class SearchTargetErrorOutput(BaseModel):
     account_id: str
     mailbox: str
-    error: str
+    error: SafeErrorOutput
 
 
 class SearchTargetOutput(BaseModel):
@@ -114,7 +145,7 @@ class SearchTargetStatusOutput(BaseModel):
     mailbox: str
     status: Literal["complete", "partial", "error", "pending"]
     cursor: str | None
-    error: str | None
+    error: SafeErrorOutput | None
 
 
 class SearchPageOutput(BaseModel):
@@ -150,7 +181,7 @@ class BatchMessageOutput(BaseModel):
     identity: IdentityOutput
     ok: bool
     message: MessageOutput | None
-    error: str | None
+    error: SafeErrorOutput | None
 
 
 class InputAttachmentOutput(BaseModel):
@@ -187,7 +218,7 @@ class BatchFlagChangeOutput(BaseModel):
     identity: IdentityOutput
     ok: bool
     change: FlagChangeOutput | None
-    error: str | None
+    error: SafeErrorOutput | None
 
 
 class MoveOutput(BaseModel):
@@ -201,7 +232,7 @@ class BatchMoveOutput(BaseModel):
     identity: IdentityOutput
     ok: bool
     move: MoveOutput | None
-    error: str | None
+    error: SafeErrorOutput | None
 
 
 class DraftCreationOutput(BaseModel):

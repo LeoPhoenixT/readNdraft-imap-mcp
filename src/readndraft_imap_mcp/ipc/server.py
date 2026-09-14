@@ -8,46 +8,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from readndraft_imap_mcp import __version__
-from readndraft_imap_mcp.broker.limits import RequestQuotaError
-from readndraft_imap_mcp.drafts import DraftBusyError, DraftRecoveryRequiredError
-from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
-from readndraft_imap_mcp.mime.html import AuthoredHtmlError
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
+from readndraft_imap_mcp.safe_error import SafeError
 
-from .codec import (
-    RpcError,
-    _filters_from_json,
-    _identity,
-)
+from .codec import _filters_from_json, _identity
 
 if TYPE_CHECKING:
     from readndraft_imap_mcp.mcp_server.backend import ReadOnlyBroker
 
 
-def _safe_error(exc: Exception) -> tuple[str, str]:
-    if isinstance(exc, DraftBusyError):
-        return "draft_busy", "draft update is already in progress"
-    if isinstance(exc, DraftRecoveryRequiredError):
-        return "recovery_required", "draft update recovery is required"
-    if isinstance(exc, ImapMovePartialError):
-        return "partial_move", "move may have copied the message; inspect both mailboxes"
-    if isinstance(exc, PermissionError):
-        return "permission_denied", "request denied"
-    if isinstance(exc, KeyError):
-        return "not_found", "requested resource was not found"
-    if isinstance(exc, AuthoredHtmlError):
-        return "invalid_request", str(exc)
-    if isinstance(exc, (ValueError, RpcError)):
-        return "invalid_request", "request rejected"
-    if isinstance(exc, TimeoutError):
-        return "timeout", "broker request timed out"
-    if isinstance(exc, RequestQuotaError):
-        return "rate_limited", "account request limit exceeded"
-    if isinstance(exc, ImapClientError):
-        return "imap_error", "IMAP operation failed"
-    if isinstance(exc, OSError):
-        return "connection_error", "mail server connection failed"
-    return "broker_error", "broker request failed"
+def _safe_error(exc: Exception) -> SafeError:
+    """Compatibility export for the shared IPC error sanitizer."""
+    from .transport import _safe_error as sanitize
+
+    return sanitize(exc)
 
 
 class BrokerRpcServer:
@@ -93,7 +67,7 @@ class BrokerRpcServer:
 
     async def dispatch(self, operation: str, params: dict[str, Any]) -> object:
         if operation == "health":
-            return {
+            health = {
                 "ok": True,
                 "status": "healthy",
                 "protocol_version": IPC_PROTOCOL_VERSION,
@@ -102,6 +76,31 @@ class BrokerRpcServer:
                 "python_implementation": platform.python_implementation(),
                 "pid": os.getpid(),
             }
+            resource_snapshot = getattr(self.broker, "resource_snapshot", None)
+            if callable(resource_snapshot):
+                health.update(resource_snapshot())
+            else:
+                health.update(
+                    {
+                        "resource_limits": {
+                            "task_bucket_capacity": 120,
+                            "task_refill_per_second": 2.0,
+                            "account_sessions": 2,
+                            "imap_workers": 8,
+                            "waiting_imap_work": 16,
+                        },
+                        "resource_usage": {
+                            "active_sessions": 0,
+                            "queued_session_requests": 0,
+                            "rejections": {
+                                "task_rate": 0,
+                                "session_queue_timeout": 0,
+                                "imap_worker_capacity": 0,
+                            },
+                        },
+                    }
+                )
+            return health
         if operation == "shutdown":
             threading.Thread(
                 target=self._graceful_shutdown,
