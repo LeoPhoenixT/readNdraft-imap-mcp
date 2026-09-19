@@ -244,7 +244,11 @@ class IpcBrokerClient:
                 reason="request_deadline",
             ) from exc
         except RpcError as exc:
-            if operation in _WRITE_OPERATIONS and exc.code in {"timeout", "connection_error"}:
+            if (
+                operation in _WRITE_OPERATIONS
+                and exc.code in {"timeout", "connection_error"}
+                and exc.reason in {None, "request_deadline", "transport_loss"}
+            ):
                 raise RpcError(
                     "write outcome is unknown; do not retry automatically",
                     code="outcome_unknown",

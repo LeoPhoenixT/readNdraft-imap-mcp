@@ -143,6 +143,30 @@ def test_pre_execution_write_rate_limit_remains_definite() -> None:
     assert rejected.value.retry_after_seconds == 2
 
 
+def test_pre_execution_write_session_queue_timeout_remains_definite() -> None:
+    class QueuedClient(IpcBrokerClient):
+        def __init__(self):
+            pass
+
+        def _request_sync(self, operation, params):
+            raise RpcError(
+                "account session queue deadline expired",
+                code="timeout",
+                scope="account",
+                reason="session_queue_timeout",
+            )
+
+    with pytest.raises(RpcError) as rejected:
+        asyncio.run(
+            QueuedClient().update_draft(
+                "personal", "a" * 32, to=("a@example.com",), subject="s", body="b"
+            )
+        )
+    assert rejected.value.code == "timeout"
+    assert rejected.value.scope == "account"
+    assert rejected.value.reason == "session_queue_timeout"
+
+
 def test_nested_safe_error_decodes_with_all_structured_fields() -> None:
     class StructuredClient(IpcBrokerClient):
         def __init__(self):

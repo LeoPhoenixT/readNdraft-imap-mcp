@@ -330,9 +330,7 @@ class BrokerExecutionContext:
     def resource_snapshot(self) -> dict[str, object]:
         return {
             "resource_limits": {
-                "task_bucket_capacity": 120,
-                "task_refill_per_second": 2.0,
-                "account_sessions": 2,
+                **self._quota.limits(),
                 "imap_workers": self._max_imap_workers,
                 "waiting_imap_work": self._max_waiting_imap_work,
             },

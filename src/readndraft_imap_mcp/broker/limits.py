@@ -189,6 +189,13 @@ class AccountRequestQuota:
         with self._lock:
             self._rejections[reason] += 1
 
+    def limits(self) -> dict[str, int | float]:
+        return {
+            "task_bucket_capacity": self._capacity,
+            "task_refill_per_second": self._refill_per_second,
+            "account_sessions": self._max_concurrent,
+        }
+
     def usage(self) -> dict[str, object]:
         with self._lock:
             return {

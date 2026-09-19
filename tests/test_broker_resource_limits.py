@@ -306,3 +306,21 @@ def test_resource_snapshot_is_aggregate_and_contains_no_account_key_material() -
     assert "private-alias" not in encoded
     assert "secret.example.com" not in encoded
     assert "owner@example.com" not in encoded
+
+
+def test_resource_snapshot_reports_injected_quota_limits() -> None:
+    broker = BrokerService(
+        quota=AccountRequestQuota(
+            max_concurrent=1,
+            requests_per_minute=7,
+            refill_per_second=0.5,
+        ),
+    )
+
+    assert broker.resource_snapshot()["resource_limits"] == {
+        "task_bucket_capacity": 7,
+        "task_refill_per_second": 0.5,
+        "account_sessions": 1,
+        "imap_workers": 8,
+        "waiting_imap_work": 16,
+    }
