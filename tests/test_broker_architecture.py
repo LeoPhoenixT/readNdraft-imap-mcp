@@ -21,7 +21,7 @@ def test_execution_context_exposes_only_execution_and_account_public_methods() -
         for node in context.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_")
     }
-    assert public_methods == {"handle", "list_accounts"}
+    assert public_methods == {"handle", "list_accounts", "resource_snapshot"}
 
 
 def test_compatibility_facade_has_no_domain_private_helpers() -> None:

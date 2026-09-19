@@ -7,54 +7,36 @@ import stat
 import sys
 import threading
 import time
+from dataclasses import asdict
 from multiprocessing.connection import AuthenticationError, Client, Listener
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
-from readndraft_imap_mcp.broker.limits import RequestQuotaError
-from readndraft_imap_mcp.drafts import DraftBusyError, DraftRecoveryRequiredError
-from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
+from readndraft_imap_mcp.broker.common import batch_error
 from readndraft_imap_mcp.mime.html import AuthoredHtmlError
+from readndraft_imap_mcp.safe_error import SafeError
 
 from .codec import (
-    BROKER_REQUEST_TIMEOUT_SECONDS,
+    BROKER_WATCHDOG_TIMEOUT_SECONDS,
     MAX_FRAME_BYTES,
     RPC_RESPONSE_TIMEOUT_SECONDS,
-    RpcError,
     _decode_envelope,
     _decode_request,
     _encode,
     _validate_request,
 )
+from .contract import RpcError
 
 if TYPE_CHECKING:
     pass
 
 
-def _safe_error(exc: Exception) -> tuple[str, str]:
-    if isinstance(exc, DraftBusyError):
-        return "draft_busy", "draft update is already in progress"
-    if isinstance(exc, DraftRecoveryRequiredError):
-        return "recovery_required", "draft update recovery is required"
-    if isinstance(exc, ImapMovePartialError):
-        return "partial_move", "move may have copied the message; inspect both mailboxes"
-    if isinstance(exc, PermissionError):
-        return "permission_denied", "request denied"
-    if isinstance(exc, KeyError):
-        return "not_found", "requested resource was not found"
+def _safe_error(exc: Exception) -> SafeError:
+    if isinstance(exc, RpcError):
+        return exc.error
     if isinstance(exc, AuthoredHtmlError):
-        return "invalid_request", str(exc)
-    if isinstance(exc, (ValueError, RpcError)):
-        return "invalid_request", "request rejected"
-    if isinstance(exc, TimeoutError):
-        return "timeout", "broker request timed out"
-    if isinstance(exc, RequestQuotaError):
-        return "rate_limited", "account request limit exceeded"
-    if isinstance(exc, ImapClientError):
-        return "imap_error", "IMAP operation failed"
-    if isinstance(exc, OSError):
-        return "connection_error", "mail server connection failed"
-    return "broker_error", "broker request failed"
+        return SafeError("invalid_request", str(exc), "request")
+    return batch_error(exc, scope="request")
 
 
 class BrokerTransportRuntime:
@@ -176,17 +158,17 @@ class BrokerTransportRuntime:
             _validate_request(request)
             coroutine = self._dispatch(request["operation"], request["params"])
             if request["operation"] not in {"health", "shutdown", "frontend_lease"}:
-                coroutine = asyncio.wait_for(coroutine, BROKER_REQUEST_TIMEOUT_SECONDS)
+                coroutine = asyncio.wait_for(coroutine, BROKER_WATCHDOG_TIMEOUT_SECONDS)
             future = asyncio.run_coroutine_threadsafe(coroutine, self._runtime())
             result = future.result(timeout=RPC_RESPONSE_TIMEOUT_SECONDS)
             return _encode({"request_id": request_id, "ok": True, "result": result})
         except Exception as exc:
-            error_type, message = _safe_error(exc)
+            error = _safe_error(exc)
             return _encode(
                 {
                     "request_id": request_id,
                     "ok": False,
-                    "error": {"type": error_type, "message": message},
+                    "error": asdict(error),
                 }
             )
 

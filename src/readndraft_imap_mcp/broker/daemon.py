@@ -8,7 +8,7 @@ from readndraft_imap_mcp.attachments import AttachmentExchange
 from readndraft_imap_mcp.audit import JsonlAuditSink
 from readndraft_imap_mcp.credentials import KeyringCredentialStore
 from readndraft_imap_mcp.drafts import FileDraftStore
-from readndraft_imap_mcp.ipc import BrokerRpcServer, IpcBrokerClient
+from readndraft_imap_mcp.ipc import BrokerRpcServer, IpcBrokerClient, RpcError
 from readndraft_imap_mcp.platform import current_app_paths
 from readndraft_imap_mcp.platform.launcher import StartupLock
 
@@ -36,6 +36,11 @@ def _stop_broker() -> int:
     paths = current_app_paths()
     try:
         IpcBrokerClient(paths.ipc_address, paths.load_or_create_ipc_key()).shutdown()
+    except RpcError as exc:
+        if exc.code not in {"connection_error", "timeout"}:
+            raise
+        print("No broker is running for the current protocol version.")
+        return 0
     except (EOFError, FileNotFoundError, ConnectionRefusedError, OSError):
         print("No broker is running for the current protocol version.")
         return 0

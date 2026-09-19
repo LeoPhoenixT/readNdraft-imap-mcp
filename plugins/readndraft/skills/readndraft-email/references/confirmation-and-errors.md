@@ -14,7 +14,8 @@ On UIDVALIDITY mismatch or a missing message, search again and ask the user to
 reselect if ambiguous. On broker startup or credential errors, recommend the
 human-only `doctor` and account test commands; never request a password in chat.
 
-Search and mutation errors use safe categories: `timeout`, `rate_limited`,
+Search and mutation errors use structured `SafeError` objects. Branch on
+`error.code`, not `error.message`. Safe codes include `timeout`, `rate_limited`,
 `imap_error`, `connection_error`, `not_found`, `permission_denied`, or
 `invalid_request`; moves may also return `partial_move`. Report the affected raw mailbox and keep other results. Do
 not invent a mailbox-count limit: a call accepts at most 20 unique targets.
@@ -23,12 +24,13 @@ tag, attribute, or CSS property; report that detail so the draft can be correcte
 
 For a partially failed batch, do not replay the original batch: successful
 items are not rolled back. Present only failures the user still wants retried
-and retry only when the user still wants those specific failures retried. Never
-automatically retry an ambiguous connection or `broker_error`.
+and retry only when the user still wants those specific failures retried. Honor
+`retry_after_seconds` when it is present. Never automatically retry an ambiguous
+`outcome_unknown`; inspect mailbox state first.
 The same rule applies to moves: a lost response may follow a completed server
 mutation, so search both mailboxes and ask the user to reselect before any new
 move request.
-# IPC 11 draft recovery errors
+# IPC 12 draft recovery and outcome errors
 
 For `draft_busy`, do not retry concurrently: wait for the current draft update
 to finish. For `recovery_required`, use the draft recovery workflow before

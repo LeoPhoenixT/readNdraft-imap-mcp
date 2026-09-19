@@ -221,7 +221,7 @@ def test_batch_read_state_preserves_order_audits_and_isolates_failure() -> None:
 
     assert [item.identity.uid for item in results] == ["7", "8", "9"]
     assert [item.ok for item in results] == [True, False, True]
-    assert results[1].error == "not_found"
+    assert results[1].error is not None and results[1].error.code == "not_found"
     assert len(audit.events) == 3
     assert [event.success for event in audit.events] == [True, False, True]
     assert all(event.operation == "set_read_state" for event in audit.events)

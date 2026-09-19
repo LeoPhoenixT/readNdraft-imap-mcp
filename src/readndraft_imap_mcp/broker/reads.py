@@ -29,7 +29,6 @@ class _Execution(Protocol):
         operation: Callable[[ImapClient], T],
         *,
         response_timeout: bool = True,
-        quota_cost: int = 1,
     ) -> T: ...
 
     async def _batch_client_call(
@@ -40,6 +39,7 @@ class _Execution(Protocol):
         *,
         max_items: int,
         response_timeout: bool = True,
+        write: bool = False,
     ) -> tuple[BatchItemOutcome[T], ...]: ...
 
 

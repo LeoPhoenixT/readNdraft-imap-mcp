@@ -300,7 +300,7 @@ def test_broker_move_batch_preserves_order_and_partial_success() -> None:
     )
     assert [item.identity.uid for item in results] == ["7", "8", "9"]
     assert [item.ok for item in results] == [True, False, True]
-    assert results[1].error == "not_found"
+    assert results[1].error is not None and results[1].error.code == "not_found"
     assert [event.success for event in audit.events] == [True, False, True]
 
 

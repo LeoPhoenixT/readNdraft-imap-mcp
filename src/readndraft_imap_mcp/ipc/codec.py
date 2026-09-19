@@ -17,15 +17,8 @@ if TYPE_CHECKING:
 MAX_FRAME_BYTES = 8 * 1024 * 1024
 RPC_RESPONSE_TIMEOUT_SECONDS = 45
 BROKER_REQUEST_TIMEOUT_SECONDS = 30
+BROKER_WATCHDOG_TIMEOUT_SECONDS = 35
 _IPC_HELPER_CAPACITY = threading.BoundedSemaphore(24)
-
-
-class RpcError(RuntimeError):
-    """Safe error returned by the local broker RPC boundary."""
-
-    def __init__(self, message: str, *, code: str = "broker_error") -> None:
-        self.code = code
-        super().__init__(f"{code}: {message}")
 
 
 def _identity(value: object) -> MessageIdentity:

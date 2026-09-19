@@ -25,10 +25,17 @@ def _broker_diagnostic(broker: dict[str, object]) -> tuple[bool, str]:
     broker_python = str(broker.get("python_version", "unknown"))
     implementation = str(broker.get("python_implementation", "unknown"))
     pid = broker.get("pid", "unknown")
+    limits = broker.get("resource_limits")
+    usage = broker.get("resource_usage")
+    resource_detail = (
+        f"; limits {limits}; usage {usage}"
+        if isinstance(limits, dict) and isinstance(usage, dict)
+        else ""
+    )
     return compatibility.compatible, (
         f"running; PID {pid}; readNdraft {broker_version}; "
         f"Python {broker_python} ({implementation}); compatible "
-        f"{'YES' if compatibility.compatible else 'NO'}; {compatibility.reason}"
+        f"{'YES' if compatibility.compatible else 'NO'}; {compatibility.reason}{resource_detail}"
     )
 
 

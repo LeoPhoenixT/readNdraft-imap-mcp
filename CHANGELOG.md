@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Replaced per-item sliding-window throttling with a per-physical-account token
+  bucket that charges one token per top-level task, including batches and
+  multi-stage draft operations. Account sessions now use a bounded FIFO queue
+  ahead of credential loading and IMAP workers.
+- Added structured `SafeError` results throughout IPC and MCP, preserved
+  completed batch outcomes at deadlines, and report ambiguous interrupted
+  writes as `outcome_unknown` without automatic retry.
+- Upgraded the wire contract to IPC 12 and added aggregate, non-account-specific
+  resource limits, usage, and rejection counters to broker health and `doctor`.
+
 ## 0.10.0
 
 - Attachment-filename search now verifies recursive MIME BODYSTRUCTURE filename

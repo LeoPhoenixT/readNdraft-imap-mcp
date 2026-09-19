@@ -14,7 +14,6 @@ from readndraft_imap_mcp.imap.models import (
     MessageIdentity,
     SearchFilters,
     SearchTarget,
-    SearchTargetError,
 )
 
 
@@ -122,8 +121,9 @@ def test_timed_out_worker_holds_the_only_slot_until_it_really_finishes() -> None
     with pytest.raises(TimeoutError):
         asyncio.run(broker.list_mailboxes("personal"))
     assert entered.is_set()
-    with pytest.raises(RequestQuotaError):
+    with pytest.raises(RequestQuotaError) as rejected:
         asyncio.run(broker.list_mailboxes("personal"))
+    assert rejected.value.reason == "imap_worker_capacity"
     release.set()
     time.sleep(0.1)
     assert asyncio.run(broker.list_mailboxes("personal"))[0].name == "INBOX"
@@ -142,10 +142,12 @@ def test_expired_batch_does_not_start_the_next_imap_command() -> None:
             time.sleep(0.06)
         return value
 
-    with pytest.raises(TimeoutError):
-        asyncio.run(broker._batch_client_call("personal", ("first", "second"), operation, max_items=2))
-    time.sleep(0.08)
+    outcomes = asyncio.run(
+        broker._batch_client_call("personal", ("first", "second"), operation, max_items=2)
+    )
     assert called == ["first"]
+    assert outcomes[0].value == "first"
+    assert outcomes[1].error is not None and outcomes[1].error.code == "timeout"
 
 
 def test_internal_batch_reuses_one_connection_and_isolates_item_errors() -> None:
@@ -176,7 +178,7 @@ def test_internal_batch_reuses_one_connection_and_isolates_item_errors() -> None
         )
     )
     assert created == 1
-    assert [(item.value, item.error) for item in outcomes] == [
+    assert [(item.value, item.error.code if item.error else None) for item in outcomes] == [
         ("ONE", None),
         (None, "not_found"),
         ("TWO", None),
@@ -225,7 +227,7 @@ def test_batch_plain_text_reads_are_ordered_and_share_one_connection() -> None:
     assert created == 1
     assert [item.identity.uid for item in results] == ["7", "8", "9"]
     assert [item.ok for item in results] == [True, False, True]
-    assert results[1].error == "not_found"
+    assert results[1].error is not None and results[1].error.code == "not_found"
 
 
 def test_plain_text_preview_is_truncated_before_batch_budgeting() -> None:
@@ -281,7 +283,7 @@ def test_mailbox_batch_preserves_order_and_isolates_failures() -> None:
 
     broker = BrokerService(registry, Credentials(), BatchClient)
     outcomes = asyncio.run(broker.list_mailboxes_batch(("first", "second")))
-    assert [(item.account_id, item.ok, item.error) for item in outcomes] == [
+    assert [(item.account_id, item.ok, item.error.code if item.error else None) for item in outcomes] == [
         ("first", True, None), ("second", False, "not_found")
     ]
 
@@ -348,7 +350,7 @@ def test_batch_read_budget_settlement_rejects_aggregate_oversubscription(monkeyp
     identities = tuple(MessageIdentity("personal", "INBOX", "1", str(index)) for index in (1, 2))
     results = asyncio.run(broker.get_emails(identities))
     assert [item.ok for item in results] == [True, False]
-    assert results[1].error == "invalid_request"
+    assert results[1].error is not None and results[1].error.code == "invalid_request"
 
 
 def test_two_phase_batch_rejects_overbudget_before_second_body_fetch(monkeypatch) -> None:
@@ -571,7 +573,7 @@ def test_multi_target_search_uses_one_shared_deadline() -> None:
         registry, Credentials(), SlowClient, request_timeout_seconds=0.05
     ).search_email_targets((("a", "INBOX"), ("b", "INBOX")), SearchFilters(), 2))
     assert time.monotonic() - started < 0.08
-    assert page.errors[-1].error == "timeout"
+    assert page.errors[-1].error.code == "timeout"
 
 
 def test_search_cursor_is_bound_and_target_errors_are_isolated() -> None:
@@ -638,7 +640,7 @@ def test_search_cursor_is_bound_and_target_errors_are_isolated() -> None:
     assert first.truncated is True and first.next_cursor is not None
     assert [item.identity.uid for item in second.results] == ["3", "2"]
     assert mixed.errors[0].mailbox == "Broken"
-    assert mixed.errors[0].error == "imap_error"
+    assert mixed.errors[0].error.code == "imap_error"
     assert mixed.targets_searched == (
         SearchTarget("personal", "INBOX"),
         SearchTarget("personal", "Broken"),
@@ -680,7 +682,7 @@ def test_single_target_search_failure_uses_page_error() -> None:
     )
 
     assert page.results == ()
-    assert page.errors[0].error == "imap_error"
+    assert page.errors[0].error.code == "imap_error"
     assert page.targets_searched == (
         SearchTarget("personal", "Infected Items"),
     )
@@ -787,7 +789,10 @@ def test_search_target_statuses_preserve_complete_partial_error_and_pending_orde
 
     assert [status.status for status in page.target_statuses] == ["complete", "partial", "error", "complete", "pending"]
     assert page.target_statuses[1].cursor is not None
-    assert page.errors == (SearchTargetError("personal", "broken", "imap_error"),)
+    assert len(page.errors) == 1
+    assert page.errors[0].account_id == "personal"
+    assert page.errors[0].mailbox == "broken"
+    assert page.errors[0].error.code == "imap_error"
     assert page.targets_searched == tuple(
         SearchTarget("personal", name) for name in ("complete", "partial", "broken", "fills")
     )

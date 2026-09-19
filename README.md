@@ -251,6 +251,8 @@ recovery. Review the
 before updating an existing integration. Integrations upgrading from 0.8.x or
 earlier should also review the
 [0.9.0 MCP migration guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/MCP_MIGRATION_0.9.0.md).
+Development builds using IPC 12 should review the
+[0.11.0 MCP migration guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/MCP_MIGRATION_0.11.0.md).
 
 ## Authorization boundary
 
@@ -371,7 +373,9 @@ Read [SECURITY.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/
 for the current security boundary. Security issues should not contain
 credentials or private mail.
 
-IPC 11 pins request validation and nested response records. A `draft_busy`
+IPC 12 pins request validation, structured nested `SafeError` records, and
+aggregate resource health data. Inspect `error.code` rather than matching error
+message text. A `draft_busy`
 result means another update holds the draft lock; `recovery_required` needs
 draft recovery before retrying; `outcome_unknown` means the IMAP write may have
 completed, so inspect the draft state instead of retrying automatically.

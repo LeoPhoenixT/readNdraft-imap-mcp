@@ -22,12 +22,11 @@ Item = TypeVar("Item")
 class _Execution(Protocol):
     async def _client_call(
         self, account_id: str, operation: Callable[[ImapClient], T], *, response_timeout: bool = True,
-        quota_cost: int = 1,
     ) -> T: ...
 
     async def _batch_client_call(
         self, account_id: str, items: tuple[Item, ...], operation: Callable[[ImapClient, Item], T], *,
-        max_items: int, response_timeout: bool = True,
+        max_items: int, response_timeout: bool = True, write: bool = False,
     ) -> tuple[BatchItemOutcome[T], ...]: ...
 
 
@@ -132,6 +131,7 @@ class MutationService:
                     mutate,
                     max_items=50,
                     response_timeout=False,
+                    write=True,
                 )
             except Exception as exc:
                 outcomes = tuple(BatchItemOutcome[FlagChange](error=batch_error(exc)) for _ in account_items)
@@ -155,7 +155,7 @@ class MutationService:
                         duration_ms=duration_ms,
                         old_state=(state_flag in change.old_flags if change is not None else None),
                         new_state=enabled if change is not None else None,
-                        error_category=outcome.error,
+                        error_category=outcome.error.code if outcome.error is not None else None,
                         client_id=client_id,
                         approval_required=False,
                     )
@@ -208,7 +208,7 @@ class MutationService:
                     destination_mailbox=destination_mailbox,
                     success=False,
                     duration_ms=int((perf_counter() - started) * 1000),
-                    error_category=batch_error(exc),
+                    error_category=batch_error(exc).code,
                     client_id=client_id,
                 )
             )
@@ -248,6 +248,7 @@ class MutationService:
                 lambda client, identity: client.move_email(identity, destination_mailbox),
                 max_items=50,
                 response_timeout=False,
+                write=True,
             )
         except Exception as exc:
             outcomes = tuple(BatchItemOutcome[MoveResult](error=batch_error(exc)) for _ in identities)
@@ -267,7 +268,7 @@ class MutationService:
                     movement_method=move.method if move is not None else None,
                     success=move is not None,
                     duration_ms=duration_ms,
-                    error_category=outcome.error,
+                    error_category=outcome.error.code if outcome.error is not None else None,
                     client_id=client_id,
                 )
             )
