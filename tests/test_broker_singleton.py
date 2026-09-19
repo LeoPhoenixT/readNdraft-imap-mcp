@@ -3,7 +3,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 from readndraft_imap_mcp.broker import daemon
+from readndraft_imap_mcp.ipc import RpcError
 from readndraft_imap_mcp.platform.launcher import StartupLock
 from readndraft_imap_mcp.platform.paths import AppPaths
 
@@ -40,3 +43,41 @@ def test_direct_console_stop_is_parsed_from_process_argv(monkeypatch) -> None:
     monkeypatch.setattr(daemon, "_stop_broker", lambda: stops.append(True) or 0)
     assert daemon.main() == 0
     assert stops == [True]
+
+
+@pytest.mark.parametrize("code", ["connection_error", "timeout"])
+def test_stop_without_reachable_broker_is_idempotent(
+    monkeypatch, tmp_path: Path, capsys, code: str
+) -> None:
+    paths = _paths(tmp_path)
+
+    class UnreachableClient:
+        def __init__(self, address: str, authkey: bytes) -> None:
+            assert address == paths.ipc_address
+            assert len(authkey) == 32
+
+        def shutdown(self) -> None:
+            raise RpcError("safe failure", code=code)
+
+    monkeypatch.setattr(daemon, "current_app_paths", lambda: paths)
+    monkeypatch.setattr(daemon, "IpcBrokerClient", UnreachableClient)
+
+    assert daemon._stop_broker() == 0
+    assert capsys.readouterr().out == "No broker is running for the current protocol version.\n"
+
+
+def test_stop_propagates_non_transport_rpc_error(monkeypatch, tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+
+    class FailingClient:
+        def __init__(self, address: str, authkey: bytes) -> None:
+            pass
+
+        def shutdown(self) -> None:
+            raise RpcError("broker rejected shutdown", code="broker_error")
+
+    monkeypatch.setattr(daemon, "current_app_paths", lambda: paths)
+    monkeypatch.setattr(daemon, "IpcBrokerClient", FailingClient)
+
+    with pytest.raises(RpcError, match="broker_error"):
+        daemon._stop_broker()
