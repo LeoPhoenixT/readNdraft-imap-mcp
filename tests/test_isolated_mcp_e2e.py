@@ -12,7 +12,7 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from readndraft_imap_mcp.broker.accounts import AccountConfig, AccountRegistry
 from readndraft_imap_mcp.broker.service import BrokerService
 from readndraft_imap_mcp.imap.client import ImapClient
-from readndraft_imap_mcp.ipc import BrokerRpcServer, IpcBrokerClient
+from readndraft_imap_mcp.ipc import BrokerRpcServer, IpcBrokerClient, RpcError
 from readndraft_imap_mcp.platform.paths import AppPaths
 
 
@@ -174,6 +174,12 @@ def test_isolated_mcp_stdio_to_real_broker_and_selective_imap_read(tmp_path) -> 
             try:
                 health = client.health()
                 break
+            except RpcError as exc:
+                if exc.code != "connection_error":
+                    raise
+                if time.monotonic() >= deadline:
+                    raise AssertionError("isolated broker did not become healthy") from exc
+                time.sleep(0.02)
             except (ConnectionError, FileNotFoundError, OSError, TimeoutError):
                 if time.monotonic() >= deadline:
                     raise AssertionError("isolated broker did not become healthy")
