@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0
+
 - Replaced per-item sliding-window throttling with a per-physical-account token
   bucket that charges one token per top-level task, including batches and
   multi-stage draft operations. Account sessions now use a bounded FIFO queue

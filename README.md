@@ -31,7 +31,7 @@ runs the published package in an isolated environment.
 Run guided setup in a real interactive terminal:
 
 ```console
-uvx readndraft-imap-mcp@0.10.0 setup
+uvx readndraft-imap-mcp@0.11.0 setup
 ```
 
 This configures only readNdraft's local account, credential, and private state.
@@ -77,7 +77,7 @@ For Claude Code, run these commands inside Claude Code:
 ```
 
 The plugin supplies one shared `readndraft-email` skill and a local stdio MCP
-definition pinned to `readndraft-imap-mcp@0.10.0`. It does not contain secrets,
+definition pinned to `readndraft-imap-mcp@0.11.0`. It does not contain secrets,
 account data, or a send capability.
 
 ### 4. Restart and verify
@@ -231,8 +231,8 @@ entry, and that entry can override the plugin. First run the one-time migration
 for the client you previously configured:
 
 ```console
-uvx readndraft-imap-mcp@0.10.0 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.10.0 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.11.0 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.11.0 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been
@@ -241,6 +241,13 @@ refuses unknown/custom MCP entries and modified or unmanaged skills. It never
 touches accounts, OS keyring credentials, audit history, attachments, drafts,
 or old `update-backups`. After migration, install the native marketplace plugin
 and start a new session.
+
+## Upgrading to 0.11.0
+
+Version 0.11.0 introduces IPC 12, structured errors, per-account task rate
+limits, and clearer results when a deadline interrupts a batch or write. Review
+the [0.11.0 MCP migration guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/MCP_MIGRATION_0.11.0.md)
+before updating an existing integration.
 
 ## Upgrading to 0.10.0
 
@@ -251,8 +258,6 @@ recovery. Review the
 before updating an existing integration. Integrations upgrading from 0.8.x or
 earlier should also review the
 [0.9.0 MCP migration guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/MCP_MIGRATION_0.9.0.md).
-Development builds using IPC 12 should review the
-[0.11.0 MCP migration guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/MCP_MIGRATION_0.11.0.md).
 
 ## Authorization boundary
 

@@ -2,7 +2,7 @@
 
 The MCP and local broker contract moves to IPC 12. The endpoint name includes
 the IPC version, so an IPC 12 frontend cannot accidentally reuse an older
-broker. Package version metadata remains unchanged until the release PR.
+broker.
 
 ## Structured errors
 
