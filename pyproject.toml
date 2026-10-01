@@ -25,6 +25,8 @@ dependencies = [
   "css-inline==0.21.0",
   "keyring==25.7.0",
   "mcp[cli]==1.29.0",
+  # Security pin for MCP's JWT runtime dependency.
+  "PyJWT==2.15.1",
   "nh3==0.3.6",
   "SecretStorage==3.5.0; sys_platform == 'linux'",
   "tinycss2==1.5.1",
@@ -41,6 +43,8 @@ dev = [
   "pip-audit==2.10.1",
   "pytest==9.1.1",
   "ruff==0.15.0",
+  # Security pin for pip-audit's HTTP dependency chain.
+  "urllib3==2.8.0",
 ]
 
 [project.scripts]

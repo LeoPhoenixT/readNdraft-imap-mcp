@@ -4,6 +4,12 @@
 
 ## 0.12.0
 
+### Security
+
+- Pin MCP's PyJWT runtime dependency to 2.15.1 and the development audit
+  tool's urllib3 dependency to 2.8.0 to remove the dependency vulnerabilities
+  reported by CI. The published runtime metadata also enforces the PyJWT pin.
+
 ### Fixed
 
 - Batch reads now advance budget positions when credentials or client entry
