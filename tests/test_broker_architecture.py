@@ -12,7 +12,7 @@ def _module(path: Path) -> ast.Module:
 
 
 def test_execution_context_exposes_only_execution_and_account_public_methods() -> None:
-    tree = _module(BROKER_DIR / "service.py")
+    tree = _module(BROKER_DIR / "execution.py")
     context = next(
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "BrokerExecutionContext"
     )
@@ -45,3 +45,11 @@ def test_domain_modules_do_not_import_the_broker_service_runtime() -> None:
             if isinstance(node, ast.ImportFrom)
         ]
         assert "service" not in imports
+        assert "execution" not in imports
+
+
+def test_execution_context_compatibility_import_is_preserved() -> None:
+    from readndraft_imap_mcp.broker.execution import BrokerExecutionContext
+    from readndraft_imap_mcp.broker.service import BrokerExecutionContext as CompatibilityContext
+
+    assert CompatibilityContext is BrokerExecutionContext

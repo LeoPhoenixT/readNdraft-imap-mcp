@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from dataclasses import replace
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING
 
 from readndraft_imap_mcp.attachments import AttachmentExchange, InputAttachment, SavedAttachment
 from readndraft_imap_mcp.imap.client import ImapClient
@@ -13,42 +13,10 @@ from readndraft_imap_mcp.imap.models import BatchMessageContent, HtmlContent, Me
 from readndraft_imap_mcp.mime.parser import MAX_MESSAGE_BYTES, MAX_TEXT_BYTES
 
 from .common import BatchItemOutcome, batch_error, validate_identity_batch
+from .interfaces import ReadExecution, RequestDeadline
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable
-
-
-T = TypeVar("T")
-Item = TypeVar("Item")
-
-
-class _Deadline(Protocol):
-    def check(self) -> None: ...
-    def remaining(self) -> float: ...
-
-
-class _Execution(Protocol):
-    def _context(self) -> _Deadline: ...
-
-    async def _client_call(
-        self,
-        account_id: str,
-        operation: Callable[[ImapClient], T],
-        *,
-        response_timeout: bool = True,
-    ) -> T: ...
-
-    async def _batch_client_call(
-        self,
-        account_id: str,
-        items: tuple[Item, ...],
-        operation: Callable[[ImapClient, Item], T],
-        *,
-        max_items: int,
-        response_timeout: bool = True,
-        write: bool = False,
-        before_item: Callable[[Item], Awaitable[None]] | None = None,
-    ) -> tuple[BatchItemOutcome[T], ...]: ...
+    pass
 
 
 def _validate_text_preview(max_text_chars: int | None) -> None:
@@ -66,7 +34,7 @@ def _truncate_message_text(message: MessageContent, max_text_chars: int | None) 
 class _BatchBudget:
     """Settle concurrent downloads in request order without locking I/O."""
 
-    def __init__(self, source_bytes: int, text_bytes: int, deadline: _Deadline) -> None:
+    def __init__(self, source_bytes: int, text_bytes: int, deadline: RequestDeadline) -> None:
         self._remaining_source = source_bytes
         self._remaining_text = text_bytes
         self._reserve_next = 0
@@ -140,7 +108,7 @@ class _BatchBudget:
 
 
 class ReadService:
-    def __init__(self, execution: _Execution, attachments: AttachmentExchange | None) -> None:
+    def __init__(self, execution: ReadExecution, attachments: AttachmentExchange | None) -> None:
         self._execution = execution
         self._attachments = attachments
 
