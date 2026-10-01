@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import threading
-from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Awaitable, Callable
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from time import monotonic
 from typing import TypeVar
@@ -150,8 +151,14 @@ class BrokerExecutionContext:
         context.check()
         if self._credentials is None:
             raise RuntimeError("credential store is not configured")
-        secret = await asyncio.wait_for(self._credentials.load_secret(account_id), context.remaining())
-        return secret
+        timeout = asyncio.timeout(context.remaining())
+        try:
+            async with timeout:
+                return await self._credentials.load_secret(account_id)
+        except TimeoutError:
+            if timeout.expired():
+                context.cancelled.set()
+            raise
 
     async def _client_call(
         self,
@@ -230,6 +237,7 @@ class BrokerExecutionContext:
         max_items: int,
         response_timeout: bool = True,
         write: bool = False,
+        before_item: Callable[[Item], Awaitable[None]] | None = None,
     ) -> tuple[BatchItemOutcome[T], ...]:
         """Run a bounded account batch sequentially on one authenticated session."""
         if not items or len(items) > max_items:
@@ -243,6 +251,7 @@ class BrokerExecutionContext:
                     max_items=max_items,
                     response_timeout=response_timeout,
                     write=write,
+                    before_item=before_item,
                 ),
                 account_ids=(account_id,),
             )
@@ -269,7 +278,9 @@ class BrokerExecutionContext:
             self._work_capacity.release()
             raise
 
-        def run() -> tuple[BatchItemOutcome[T], ...]:
+        stack = ExitStack()
+
+        def open_client() -> ImapClient:
             nonlocal secret
             try:
                 context.check()
@@ -277,55 +288,82 @@ class BrokerExecutionContext:
                 bind_guard = getattr(instance, "bind_request_guard", None)
                 if bind_guard is not None:
                     bind_guard(context.check, context.remaining)
-                with instance as client:
-                    outcomes: list[BatchItemOutcome[T]] = []
-                    for index, item in enumerate(items):
-                        try:
-                            context.check()
-                            outcomes.append(BatchItemOutcome(value=operation(client, item)))
-                        except Exception as exc:
-                            error = batch_error(exc, outcome_unknown=write)
-                            outcomes.append(BatchItemOutcome(error=error))
-                            if error.code == "outcome_unknown":
-                                remaining_error = (
-                                    batch_error(TimeoutError("broker request deadline expired"))
-                                    if error.reason == "request_deadline"
-                                    else batch_error(OSError("mail server connection lost"))
-                                )
-                                outcomes.extend(
-                                    BatchItemOutcome(error=remaining_error)
-                                    for _ in items[index + 1 :]
-                                )
-                                break
-                            if context.cancelled.is_set() or context.remaining() <= 0:
-                                timeout_error = batch_error(TimeoutError("broker request deadline expired"))
-                                outcomes.extend(
-                                    BatchItemOutcome(error=timeout_error) for _ in items[index + 1 :]
-                                )
-                                break
-                    return tuple(outcomes)
+                return stack.enter_context(instance)
             finally:
                 secret = ""
 
+        submitted: Future | None = None
         try:
-            submitted = self._executor.submit(run)
-        except BaseException:
-            permit.release()
-            self._work_capacity.release()
+            submitted = self._executor.submit(open_client)
+            client = await asyncio.shield(asyncio.wrap_future(submitted))
+            outcomes: list[BatchItemOutcome[T]] = []
+            for index, item in enumerate(items):
+                try:
+                    context.check()
+                    if before_item is not None:
+                        # Ordering waits run on the event loop, never occupying
+                        # a worker needed by an earlier account's queued read.
+                        await before_item(item)
+
+                    def run(item: Item = item) -> T:
+                        context.check()
+                        return operation(client, item)
+
+                    submitted = self._executor.submit(run)
+                    outcomes.append(BatchItemOutcome(value=await asyncio.shield(asyncio.wrap_future(submitted))))
+                except Exception as exc:
+                    error = batch_error(exc, outcome_unknown=write)
+                    outcomes.append(BatchItemOutcome(error=error))
+                    if error.code == "outcome_unknown" or context.cancelled.is_set() or context.remaining() <= 0:
+                        remaining_error = (
+                            batch_error(OSError("mail server connection lost"))
+                            if error.reason == "transport_loss"
+                            else batch_error(TimeoutError("broker request deadline expired"))
+                        )
+                        outcomes.extend(BatchItemOutcome(error=remaining_error) for _ in items[index + 1 :])
+                        break
+            return tuple(outcomes)
+        except asyncio.CancelledError:
+            context.cancelled.set()
             raise
+        finally:
+            # Thread-owned callbacks survive repeated task cancellation and
+            # event-loop shutdown. Never close a client still used by a worker.
+            closing: Future[None] = Future()
 
-        def done(_future) -> None:
-            try:
-                permit.release()
-            finally:
-                self._work_capacity.release()
+            def released(finished: Future) -> None:
+                try:
+                    finished.result()
+                except BaseException as exc:
+                    failure = exc
+                else:
+                    failure = None
+                finally:
+                    permit.release()
+                    self._work_capacity.release()
+                if failure is not None:
+                    closing.set_exception(failure)
+                else:
+                    closing.set_result(None)
 
-        submitted.add_done_callback(done)
-        pending = asyncio.wrap_future(submitted)
-        # A started batch owns completion of its ordered outcome list. The
-        # request guard stops new items at the deadline while the worker retains
-        # every completed result for the response.
-        return await pending
+            def close(_finished: Future | None) -> None:
+                try:
+                    cleanup = self._executor.submit(stack.close)
+                except BaseException:
+                    cleanup = Future()
+                    try:
+                        stack.close()
+                    except BaseException as exc:
+                        cleanup.set_exception(exc)
+                    else:
+                        cleanup.set_result(None)
+                cleanup.add_done_callback(released)
+
+            if submitted is None:
+                close(None)
+            else:
+                submitted.add_done_callback(close)
+            await asyncio.shield(asyncio.wrap_future(closing))
 
     def resource_snapshot(self) -> dict[str, object]:
         return {

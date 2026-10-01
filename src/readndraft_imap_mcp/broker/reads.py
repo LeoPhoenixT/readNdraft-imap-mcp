@@ -15,14 +15,21 @@ from readndraft_imap_mcp.mime.parser import MAX_MESSAGE_BYTES, MAX_TEXT_BYTES
 from .common import BatchItemOutcome, batch_error, validate_identity_batch
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Awaitable, Callable
 
 
 T = TypeVar("T")
 Item = TypeVar("Item")
 
 
+class _Deadline(Protocol):
+    def check(self) -> None: ...
+    def remaining(self) -> float: ...
+
+
 class _Execution(Protocol):
+    def _context(self) -> _Deadline: ...
+
     async def _client_call(
         self,
         account_id: str,
@@ -40,6 +47,7 @@ class _Execution(Protocol):
         max_items: int,
         response_timeout: bool = True,
         write: bool = False,
+        before_item: Callable[[Item], Awaitable[None]] | None = None,
     ) -> tuple[BatchItemOutcome[T], ...]: ...
 
 
@@ -58,34 +66,52 @@ def _truncate_message_text(message: MessageContent, max_text_chars: int | None) 
 class _BatchBudget:
     """Settle concurrent downloads in request order without locking I/O."""
 
-    def __init__(self, source_bytes: int, text_bytes: int) -> None:
+    def __init__(self, source_bytes: int, text_bytes: int, deadline: _Deadline) -> None:
         self._remaining_source = source_bytes
         self._remaining_text = text_bytes
         self._reserve_next = 0
         self._settle_next = 0
         self._reservations: dict[int, int] = {}
+        self._skipped: set[int] = set()
+        self._deadline = deadline
         self._condition = threading.Condition()
+
+    def _advance_skipped(self) -> None:
+        while self._reserve_next in self._skipped:
+            self._reserve_next += 1
+        while self._settle_next in self._skipped:
+            self._settle_next += 1
+        self._condition.notify_all()
+
+    async def wait_turn(self, item: tuple[int, MessageIdentity]) -> None:
+        """Wait outside the bounded worker pool for the next reservation."""
+        index, _ = item
+        while True:
+            self._deadline.check()
+            with self._condition:
+                if index == self._reserve_next:
+                    return
+            await asyncio.sleep(min(0.01, max(0, self._deadline.remaining())))
+
+    def _wait(self) -> None:
+        self._deadline.check()
+        self._condition.wait(timeout=min(0.05, max(0, self._deadline.remaining())))
 
     def skip(self, index: int) -> None:
         with self._condition:
-            while index != self._settle_next:
-                self._condition.wait()
+            if index < self._settle_next or index in self._skipped:
+                return
+            self._skipped.add(index)
             reserved = self._reservations.pop(index, None)
-            # A two-phase client can fail while obtaining metadata, before it
-            # calls reserve().  In that case later accounts may already be
-            # waiting for this request-order slot.  Skipping must advance both
-            # order cursors or those waiters can never start their download.
-            if reserved is None and index == self._reserve_next:
-                self._reserve_next += 1
-            elif reserved is not None:
+            if reserved is not None:
                 self._remaining_source += reserved
-            self._settle_next += 1
-            self._condition.notify_all()
+            self._advance_skipped()
 
     def reserve(self, index: int, source_bytes: int) -> bool:
         with self._condition:
             while index != self._reserve_next:
-                self._condition.wait()
+                self._wait()
+            self._deadline.check()
             self._reserve_next += 1
             if source_bytes > self._remaining_source:
                 self._condition.notify_all()
@@ -99,7 +125,7 @@ class _BatchBudget:
         """Atomically account a completed download in stable request order."""
         with self._condition:
             while index != self._settle_next:
-                self._condition.wait()
+                self._wait()
             try:
                 reserved = self._reservations.pop(index, 0)
                 if source_bytes > reserved + self._remaining_source:
@@ -110,7 +136,7 @@ class _BatchBudget:
                 self._remaining_text -= text_bytes
             finally:
                 self._settle_next += 1
-                self._condition.notify_all()
+                self._advance_skipped()
 
 
 class ReadService:
@@ -129,7 +155,7 @@ class ReadService:
         account_ids, indexed_groups = validate_identity_batch(identities, max_items=10, max_accounts=2)
         _validate_text_preview(max_text_chars)
 
-        budget = _BatchBudget(MAX_MESSAGE_BYTES, MAX_TEXT_BYTES)
+        budget = _BatchBudget(MAX_MESSAGE_BYTES, MAX_TEXT_BYTES, self._execution._context())
 
         async def run_account(account_id: str, indexed):
             def read(client: ImapClient, item: tuple[int, MessageIdentity]) -> MessageContent:
@@ -144,6 +170,7 @@ class ReadService:
                             lambda source_bytes: budget.reserve(index, source_bytes),
                         )
                     else:
+                        budget.reserve(index, 0)
                         message = client.get_message(identity, MAX_MESSAGE_BYTES)
                 except Exception:
                     budget.skip(index)
@@ -154,9 +181,16 @@ class ReadService:
 
             account_items = tuple(indexed)
             try:
-                outcomes = await self._execution._batch_client_call(account_id, account_items, read, max_items=10)
+                outcomes = await self._execution._batch_client_call(
+                    account_id, account_items, read, max_items=10, before_item=budget.wait_turn
+                )
             except Exception as exc:
                 outcomes = tuple(BatchItemOutcome[MessageContent](error=batch_error(exc)) for _ in account_items)
+            finally:
+                # Includes failures before client entry, unstarted deadline
+                # items and cancellation. skip() never waits on the event loop.
+                for index, _ in account_items:
+                    budget.skip(index)
             return indexed, outcomes
 
         completed = await asyncio.gather(
