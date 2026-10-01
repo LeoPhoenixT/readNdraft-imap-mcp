@@ -48,6 +48,9 @@ class _RequestContext:
     cancelled: threading.Event
     account_ids: tuple[str, ...] = ()
     admitted_keys: frozenset[PhysicalAccountKey] = frozenset()
+    accounts: dict[str, AccountConfig] | None = None
+    account_errors: dict[str, Exception] = field(default_factory=dict)
+    admission_error: RequestQuotaError | None = None
     admission_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def remaining(self) -> float:
@@ -132,19 +135,31 @@ class BrokerExecutionContext:
         return (account.hostname.rstrip(".").casefold(), account.port, account.username)
 
     def _ensure_task_admitted(self, context: _RequestContext, account_id: str) -> AccountConfig:
-        account = self._current_accounts().require_enabled(account_id)
         with context.admission_lock:
-            key = self._physical_account_key(account)
-            if context.admitted_keys:
-                if key not in context.admitted_keys:
-                    raise RuntimeError("request used an account outside its admission set")
-                return account
-            account_ids = context.account_ids or (account_id,)
-            accounts = tuple(self._current_accounts().require_enabled(item) for item in account_ids)
-            keys = tuple(dict.fromkeys(self._physical_account_key(item) for item in accounts))
-            self._quota.admit_task(keys)
-            context.admitted_keys = frozenset(keys)
-        return account
+            if context.accounts is None:
+                registry = self._current_accounts()
+                resolved: dict[str, AccountConfig] = {}
+                for item in context.account_ids or (account_id,):
+                    try:
+                        resolved[item] = registry.require_enabled(item)
+                    except (KeyError, PermissionError) as exc:
+                        context.account_errors[item] = exc
+                context.accounts = resolved
+                keys = tuple(dict.fromkeys(self._physical_account_key(item) for item in resolved.values()))
+                if keys:
+                    try:
+                        self._quota.admit_task(keys)
+                    except RequestQuotaError as exc:
+                        context.admission_error = exc
+                    else:
+                        context.admitted_keys = frozenset(keys)
+            if account_id in context.account_errors:
+                raise context.account_errors[account_id]
+            if account_id not in context.accounts:
+                raise RuntimeError("request used an account outside its admission set")
+            if context.admission_error is not None:
+                raise context.admission_error
+            return context.accounts[account_id]
 
     async def _credential(self, account_id: str, account: AccountConfig) -> str:
         context = self._context()
