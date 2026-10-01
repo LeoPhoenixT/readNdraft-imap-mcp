@@ -31,6 +31,7 @@ import sys
 import readndraft_imap_mcp.mcp_server.server
 blocked = [name for name in sys.modules if name.startswith((
     'readndraft_imap_mcp.broker.service',
+    'readndraft_imap_mcp.broker.execution',
     'readndraft_imap_mcp.credentials',
     'readndraft_imap_mcp.admin',
 ))]

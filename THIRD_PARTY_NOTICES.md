@@ -7,7 +7,7 @@ its own license and includes its authoritative license material in its upstream
 distribution.
 
 This inventory reflects the runtime dependency graph locked for readNdraft
-0.5.1. Platform markers mean that an individual installation contains only the
+0.12.0. Platform markers mean that an individual installation contains only the
 packages applicable to that operating system.
 
 | Package | Version | License | Platform |
@@ -44,7 +44,7 @@ packages applicable to that operating system.
 | pydantic-core | 2.46.4 | MIT | All |
 | pydantic-settings | 2.15.0 | MIT | All |
 | Pygments | 2.20.0 | BSD-2-Clause | All |
-| PyJWT | 2.13.0 | MIT | All |
+| PyJWT | 2.15.1 | MIT | All |
 | python-dotenv | 1.2.2 | BSD-3-Clause | All |
 | python-multipart | 0.0.32 | Apache-2.0 | All |
 | pywin32 | 312 | Mixed; see upstream license files and per-file notices | Windows |

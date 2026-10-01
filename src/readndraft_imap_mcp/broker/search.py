@@ -7,7 +7,7 @@ import base64
 import hashlib
 import json
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING
 
 from readndraft_imap_mcp.imap.client import ImapClient, ImapClientError
 from readndraft_imap_mcp.imap.models import (
@@ -23,26 +23,10 @@ from readndraft_imap_mcp.imap.models import (
 from readndraft_imap_mcp.imap.search import SearchScanBudget
 
 from .common import batch_error
+from .interfaces import SearchExecution
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
-
-T = TypeVar("T")
-
-
-class _Execution(Protocol):
-    async def _with_request_context(
-        self, operation: Callable[[], object], *, account_ids: tuple[str, ...] = ()
-    ) -> object: ...
-
-    async def _client_call(
-        self,
-        account_id: str,
-        operation: Callable[[ImapClient], T],
-        *,
-        response_timeout: bool = True,
-    ) -> T: ...
+    pass
 
 
 def _search_fingerprint(filters: SearchFilters) -> str:
@@ -112,19 +96,19 @@ def _decode_search_cursor(
 
 
 class SearchService:
-    def __init__(self, execution: _Execution) -> None:
+    def __init__(self, execution: SearchExecution) -> None:
         self._execution = execution
 
     async def list_mailboxes(self, account_id: str) -> tuple[Mailbox, ...]:
         return await self._execution._with_request_context(
             lambda: self._execution._client_call(account_id, lambda client: client.list_mailboxes()),
             account_ids=(account_id,),
-        )  # type: ignore[return-value]
+        )
 
     async def list_mailboxes_batch(self, account_ids: tuple[str, ...]) -> tuple[MailboxBatchResult, ...]:
         return await self._execution._with_request_context(
             lambda: self._list_mailboxes_batch(account_ids), account_ids=account_ids
-        )  # type: ignore[return-value]
+        )
 
     async def _list_mailboxes_batch(self, account_ids: tuple[str, ...]) -> tuple[MailboxBatchResult, ...]:
         if not 1 <= len(account_ids) <= 10:
@@ -163,7 +147,7 @@ class SearchService:
         return await self._execution._with_request_context(
             lambda: self._search_email_targets(targets, filters, limit, cursor),
             account_ids=tuple(dict.fromkeys(account_id for account_id, _ in targets)),
-        )  # type: ignore[return-value]
+        )
 
     async def _search_email_targets(
         self,

@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## 0.12.0
+
+### Security
+
+- Pin MCP's PyJWT runtime dependency to 2.15.1 and the development audit
+  tool's urllib3 dependency to 2.8.0 to remove the dependency vulnerabilities
+  reported by CI. The published runtime metadata also enforces the PyJWT pin.
+
+### Fixed
+
+- Batch reads now advance budget positions when credentials or client entry
+  fail, and wait for ordered reservations outside the bounded IMAP worker pool.
+  Interleaved accounts can progress with one worker without stranding sessions.
+- Missing or disabled accounts no longer poison valid accounts in batch mailbox
+  lookup, search, reads, or flag changes. Valid physical accounts are admitted
+  once per request with atomic, deduplicated task quotas.
+- Session and worker capacity remain owned until the last operation and logout
+  finish, including repeated cancellation and event-loop shutdown. A batch write
+  rejected before its operation starts reports a definite timeout.
+
+### Changed
+
+- Separated broker execution and small domain interfaces, extracted pure IMAP
+  parsing and shared full-message conversion, and split MCP schemas from tool
+  registration while preserving existing compatibility exports.
+- The MCP tool catalog and IPC 12 wire contract are unchanged. No new tool or
+  mail capability is introduced.
+
 ## 0.11.0
 
 - Replaced per-item sliding-window throttling with a per-physical-account token
