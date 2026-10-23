@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.12.1
+
+### Security
+
+- Update certifi to 2026.10.19 to remove the emSign ECC G3 trust root affected by
+  compromised intermediate CA keys ([GHSA-6q48-6c7w-9gw2](https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2)).
+- Pin development pip to 26.2.2 because it vendors a separate certifi bundle;
+  upgrading standalone certifi does not update that copy. Regression tests check
+  both bundles for the affected root certificate.
+- Update MCP from 1.29.0 to 1.30.0 for the September/October SDK security fixes,
+  including CVE-2026-59951. The service continues to expose only stdio; its tool
+  schemas, IPC 12 contract, authentication, and mail permissions are unchanged.
+
 ## 0.12.0
 
 ### Security
