@@ -31,7 +31,7 @@ runs the published package in an isolated environment.
 Run guided setup in a real interactive terminal:
 
 ```console
-uvx readndraft-imap-mcp@0.12.0 setup
+uvx readndraft-imap-mcp@0.12.1 setup
 ```
 
 This configures only readNdraft's local account, credential, and private state.
@@ -77,7 +77,7 @@ For Claude Code, run these commands inside Claude Code:
 ```
 
 The plugin supplies one shared `readndraft-email` skill and a local stdio MCP
-definition pinned to `readndraft-imap-mcp@0.12.0`. It does not contain secrets,
+definition pinned to `readndraft-imap-mcp@0.12.1`. It does not contain secrets,
 account data, or a send capability.
 
 ### 4. Restart and verify
@@ -231,8 +231,8 @@ entry, and that entry can override the plugin. First run the one-time migration
 for the client you previously configured:
 
 ```console
-uvx readndraft-imap-mcp@0.12.0 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.12.0 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.12.1 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.12.1 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been
@@ -241,6 +241,17 @@ refuses unknown/custom MCP entries and modified or unmanaged skills. It never
 touches accounts, OS keyring credentials, audit history, attachments, drafts,
 or old `update-backups`. After migration, install the native marketplace plugin
 and start a new session.
+
+## Upgrading to 0.12.1
+
+Version 0.12.1 updates MCP to 1.30.0 and certifi to 2026.10.19 for dependency
+security fixes, and pins development pip to 26.2.2 to update its separate vendored
+CA bundle. Update both the runtime and marketplace plugin, then reconnect the
+client. MCP tool schemas, IPC 12, credentials, and read/draft permissions are
+unchanged; no integration migration is required.
+
+This does not update Python, the OS CA store used by IMAP TLS, or other
+environments. Keep those current through normal system maintenance.
 
 ## Upgrading to 0.12.0
 
