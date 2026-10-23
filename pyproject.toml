@@ -22,9 +22,12 @@ classifiers = [
   "Topic :: Communications :: Email :: Post-Office :: IMAP",
 ]
 dependencies = [
+  # Remove the compromised emSign ECC G3 trust root (GHSA-6q48-6c7w-9gw2).
+  "certifi==2026.10.19",
   "css-inline==0.21.0",
   "keyring==25.7.0",
-  "mcp[cli]==1.29.0",
+  # Stay on the compatible 1.x line with the September/October security fixes.
+  "mcp[cli]==1.30.0",
   # Security pin for MCP's JWT runtime dependency.
   "PyJWT==2.15.1",
   "nh3==0.3.6",
@@ -40,6 +43,8 @@ Issues = "https://github.com/LeoPhoenixT/readNdraft-imap-mcp/issues"
 
 [project.optional-dependencies]
 dev = [
+  # pip vendors its own CA bundle; the standalone certifi pin cannot fix it.
+  "pip==26.2.2",
   "pip-audit==2.10.1",
   "pytest==9.1.1",
   "ruff==0.15.0",

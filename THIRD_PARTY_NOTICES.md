@@ -10,13 +10,17 @@ This inventory reflects the runtime dependency graph locked for readNdraft
 0.12.0. Platform markers mean that an individual installation contains only the
 packages applicable to that operating system.
 
+The development extra also pins pip 26.2.2 (MIT), whose vendored CA bundle includes
+certifi 2026.10.19. pip's upstream distribution carries the notices for its vendored
+libraries; updating standalone certifi does not replace pip's private copy.
+
 | Package | Version | License | Platform |
 | --- | ---: | --- | --- |
 | annotated-doc | 0.0.5 | MIT | All |
 | annotated-types | 0.8.0 | MIT | All |
 | anyio | 4.14.2 | MIT | All |
 | attrs | 26.1.0 | MIT | All |
-| certifi | 2026.7.22 | MPL-2.0 | All |
+| certifi | 2026.10.19 | MPL-2.0 | All |
 | cffi | 2.1.1 | MIT-0 | All |
 | click | 8.4.2 | BSD-3-Clause | All |
 | colorama | 0.4.6 | BSD-3-Clause | Windows |
@@ -35,7 +39,7 @@ packages applicable to that operating system.
 | jsonschema-specifications | 2025.9.1 | MIT | All |
 | keyring | 25.7.0 | MIT | All |
 | markdown-it-py | 4.2.0 | MIT | All |
-| mcp | 1.29.0 | MIT | All |
+| mcp | 1.30.0 | MIT | All |
 | mdurl | 0.1.2 | MIT | All |
 | more-itertools | 11.1.0 | MIT | All |
 | nh3 | 0.3.6 | MIT | All |
