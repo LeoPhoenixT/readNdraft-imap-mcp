@@ -224,41 +224,6 @@ the final frontend disconnects and the idle period expires. Always-on systemd
 and Windows scheduled-task deployments remain available through the legacy
 administration documentation.
 
-## Upgrading from 0.3.x or earlier
-
-Installing a plugin does not automatically remove an older user-scoped MCP
-entry, and that entry can override the plugin. First run the one-time migration
-for the client you previously configured:
-
-```console
-uvx readndraft-imap-mcp@0.11.0 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.11.0 migrate-plugin --client claude-code
-```
-
-The migration removes only a legacy MCP invocation recognized as having been
-created by readNdraft and only unmodified, managed legacy skill directories. It
-refuses unknown/custom MCP entries and modified or unmanaged skills. It never
-touches accounts, OS keyring credentials, audit history, attachments, drafts,
-or old `update-backups`. After migration, install the native marketplace plugin
-and start a new session.
-
-## Upgrading to 0.11.0
-
-Version 0.11.0 introduces IPC 12, structured errors, per-account task rate
-limits, and clearer results when a deadline interrupts a batch or write. Review
-the [0.11.0 MCP migration guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/MCP_MIGRATION_0.11.0.md)
-before updating an existing integration.
-
-## Upgrading to 0.10.0
-
-Version 0.10.0 introduces IPC 11, ordered per-target search status, selective
-BODYSTRUCTURE reads, bounded attachment-filename search, and crash-safe draft
-recovery. Review the
-[0.10.0 MCP migration guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/MCP_MIGRATION_0.10.0.md)
-before updating an existing integration. Integrations upgrading from 0.8.x or
-earlier should also review the
-[0.9.0 MCP migration guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/MCP_MIGRATION_0.9.0.md).
-
 ## Authorization boundary
 
 The broker has no approval-token workflow. Generated Codex configurations use
@@ -290,6 +255,12 @@ Diagnostic output never prints passwords, credential contents, raw IMAP traces,
 or message content. See [troubleshooting](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/TROUBLESHOOTING.md).
 
 ## Updating
+
+Before updating, review the [upgrade guide](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/UPGRADING.md)
+for the migration steps that apply to your installed version. Installations from
+0.3.x or earlier need a one-time migration to the marketplace plugin. See the
+[changelog](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/CHANGELOG.md)
+for release changes.
 
 Use the client's native marketplace/plugin update command. Plugin release,
 Claude manifest, Codex manifest, and pinned PyPI runtime versions are validated
