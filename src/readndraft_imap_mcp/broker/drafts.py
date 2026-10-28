@@ -5,7 +5,7 @@ from __future__ import annotations
 import secrets
 from dataclasses import replace
 from time import perf_counter
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING
 
 from readndraft_imap_mcp.attachments import AttachmentExchange
 from readndraft_imap_mcp.audit import AuditEvent, AuditSink, AuditUnavailableError
@@ -14,24 +14,14 @@ from readndraft_imap_mcp.drafts import (
     DraftRecoveryRequiredError,
     FileDraftStore,
 )
-from readndraft_imap_mcp.imap.client import ImapClient
 from readndraft_imap_mcp.imap.models import DraftCreationResult, DraftUpdateResult, MessageIdentity
 from readndraft_imap_mcp.mime.drafts import DraftAttachment, PreparedDraft, build_draft_message, prepare_draft
 
+from .interfaces import DraftExecution
+
 if TYPE_CHECKING:
-    from collections.abc import Callable
 
-    from readndraft_imap_mcp.broker.accounts import AccountConfig, AccountRegistry
-
-T = TypeVar("T")
-
-
-class _Execution(Protocol):
-    def _current_accounts(self) -> AccountRegistry: ...
-
-    async def _client_call(
-        self, account_id: str, operation: Callable[[ImapClient], T], *, response_timeout: bool = True,
-    ) -> T: ...
+    from readndraft_imap_mcp.broker.accounts import AccountConfig
 
 
 def _message_ids(value: str, *, field: str) -> tuple[str, ...]:
@@ -57,7 +47,7 @@ def reply_thread(source_id: str, references: str | None) -> tuple[str, tuple[str
 
 class DraftService:
     def __init__(
-        self, execution: _Execution, audit: AuditSink | None, drafts: FileDraftStore | None,
+        self, execution: DraftExecution, audit: AuditSink | None, drafts: FileDraftStore | None,
         attachments: AttachmentExchange | None,
     ) -> None:
         self._execution = execution

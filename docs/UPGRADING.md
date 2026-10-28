@@ -10,12 +10,37 @@ required migration steps and integration contract changes.
 
 ## Choose your upgrade path
 
-| Installed version | Steps when upgrading to 0.11.0 |
+| Installed version | Steps when upgrading to 0.12.1 |
 | --- | --- |
 | 0.3.x or earlier | Complete the legacy plugin migration below, then review the 0.9.0, 0.10.0, and 0.11.0 guides. |
 | 0.4.x through 0.8.x | Review the 0.9.0, 0.10.0, and 0.11.0 guides. |
 | 0.9.x | Review the 0.10.0 and 0.11.0 guides. |
-| 0.10.x | Review the 0.11.0 guide. |
+| 0.10.x | Review the 0.11.0 guide and the update notes below. |
+| 0.11.x through 0.12.0 | Review the update notes below. |
+
+## Updates after 0.11.0
+
+Versions 0.11.x and 0.12.x require no integration contract migration when
+upgrading to 0.12.1. Review these release-specific update notes:
+
+### Upgrading to 0.12.1
+
+Version 0.12.1 updates MCP to 1.30.0 and certifi to 2026.10.19 for dependency
+security fixes, and pins development pip to 26.2.2 to update its separate vendored
+CA bundle. Update both the runtime and marketplace plugin, then reconnect the
+client. MCP tool schemas, IPC 12, credentials, and read/draft permissions are
+unchanged; no integration migration is required.
+
+This does not update Python, the OS CA store used by IMAP TLS, or other
+environments. Keep those current through normal system maintenance.
+
+### Upgrading to 0.12.0
+
+Version 0.12.0 fixes batch-read scheduling and per-account failure isolation,
+including cancellation-safe session cleanup. The MCP tool schemas and IPC 12
+wire contract are unchanged, so existing tool calls need no migration. Update
+both the runtime and marketplace plugin, then reconnect the client to use the
+new package version.
 
 ## MCP integration migration guides
 
@@ -33,8 +58,8 @@ for the client you previously configured. Run only the applicable command, or
 both if you previously configured both clients:
 
 ```console
-uvx readndraft-imap-mcp@0.11.0 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.11.0 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.12.1 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.12.1 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been

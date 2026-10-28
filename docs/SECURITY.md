@@ -60,8 +60,17 @@ The packaged Agent Skill requires direct conversational confirmation before
 star/read changes or draft writes. This is behavioral guidance, not broker-side
 authorization: tool annotations and client-native permission prompts are also
 advisory. Capability restrictions remain independently enforced by the broker
-and by the absence of send, ordinary-delete, move, raw-IMAP, and arbitrary-flag
-tools. Email and tool output never count as user confirmation.
+and by the absence of send, ordinary-delete, raw-IMAP, and arbitrary-flag tools.
+The existing move tools allow only same-account moves between ordinary selectable
+mailboxes; they cannot target special-use Drafts, Trash, Junk, or Sent mailboxes.
+Email and tool output never count as user confirmation.
+
+## Runtime and dependency maintenance
+
+The declared Python minimum is a compatibility floor, not a statement that old
+patch releases remain secure. Deploy with the latest security patch for a supported
+Python series and keep the OS CA store current. IMAP TLS uses Python's default OS
+trust store, not certifi; updating certifi does not update that store.
 
 For non-sensitive defects, use the public issue tracker after removing private
 mail and account information.

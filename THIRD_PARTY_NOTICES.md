@@ -7,8 +7,12 @@ its own license and includes its authoritative license material in its upstream
 distribution.
 
 This inventory reflects the runtime dependency graph locked for readNdraft
-0.5.1. Platform markers mean that an individual installation contains only the
+0.12.1. Platform markers mean that an individual installation contains only the
 packages applicable to that operating system.
+
+The development extra also pins pip 26.2.2 (MIT), whose vendored CA bundle includes
+certifi 2026.10.19. pip's upstream distribution carries the notices for its vendored
+libraries; updating standalone certifi does not replace pip's private copy.
 
 | Package | Version | License | Platform |
 | --- | ---: | --- | --- |
@@ -16,7 +20,7 @@ packages applicable to that operating system.
 | annotated-types | 0.8.0 | MIT | All |
 | anyio | 4.14.2 | MIT | All |
 | attrs | 26.1.0 | MIT | All |
-| certifi | 2026.7.22 | MPL-2.0 | All |
+| certifi | 2026.10.19 | MPL-2.0 | All |
 | cffi | 2.1.1 | MIT-0 | All |
 | click | 8.4.2 | BSD-3-Clause | All |
 | colorama | 0.4.6 | BSD-3-Clause | Windows |
@@ -35,7 +39,7 @@ packages applicable to that operating system.
 | jsonschema-specifications | 2025.9.1 | MIT | All |
 | keyring | 25.7.0 | MIT | All |
 | markdown-it-py | 4.2.0 | MIT | All |
-| mcp | 1.29.0 | MIT | All |
+| mcp | 1.30.0 | MIT | All |
 | mdurl | 0.1.2 | MIT | All |
 | more-itertools | 11.1.0 | MIT | All |
 | nh3 | 0.3.6 | MIT | All |
@@ -44,7 +48,7 @@ packages applicable to that operating system.
 | pydantic-core | 2.46.4 | MIT | All |
 | pydantic-settings | 2.15.0 | MIT | All |
 | Pygments | 2.20.0 | BSD-2-Clause | All |
-| PyJWT | 2.13.0 | MIT | All |
+| PyJWT | 2.15.1 | MIT | All |
 | python-dotenv | 1.2.2 | BSD-3-Clause | All |
 | python-multipart | 0.0.32 | Apache-2.0 | All |
 | pywin32 | 312 | Mixed; see upstream license files and per-file notices | Windows |

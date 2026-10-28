@@ -4,30 +4,17 @@ from __future__ import annotations
 
 import asyncio
 from time import perf_counter
-from typing import TYPE_CHECKING, Protocol, TypeVar
+from typing import TYPE_CHECKING
 
 from readndraft_imap_mcp.audit import AuditEvent, AuditSink, AuditUnavailableError
 from readndraft_imap_mcp.imap.client import ImapClient
 from readndraft_imap_mcp.imap.models import BatchFlagChange, BatchMoveResult, FlagChange, MessageIdentity, MoveResult
 
 from .common import BatchItemOutcome, batch_error, validate_identity_batch
+from .interfaces import BatchExecution
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
-T = TypeVar("T")
-Item = TypeVar("Item")
-
-
-class _Execution(Protocol):
-    async def _client_call(
-        self, account_id: str, operation: Callable[[ImapClient], T], *, response_timeout: bool = True,
-    ) -> T: ...
-
-    async def _batch_client_call(
-        self, account_id: str, items: tuple[Item, ...], operation: Callable[[ImapClient, Item], T], *,
-        max_items: int, response_timeout: bool = True, write: bool = False,
-    ) -> tuple[BatchItemOutcome[T], ...]: ...
+    pass
 
 
 def mutation_spec(operation: str) -> tuple[str, str]:
@@ -39,7 +26,7 @@ def mutation_spec(operation: str) -> tuple[str, str]:
 
 
 class MutationService:
-    def __init__(self, execution: _Execution, audit: AuditSink | None) -> None:
+    def __init__(self, execution: BatchExecution, audit: AuditSink | None) -> None:
         self._execution = execution
         self._audit = audit
 
@@ -130,7 +117,7 @@ class MutationService:
                     account_items,
                     mutate,
                     max_items=50,
-                    response_timeout=False,
+
                     write=True,
                 )
             except Exception as exc:
@@ -247,7 +234,7 @@ class MutationService:
                 identities,
                 lambda client, identity: client.move_email(identity, destination_mailbox),
                 max_items=50,
-                response_timeout=False,
+
                 write=True,
             )
         except Exception as exc:

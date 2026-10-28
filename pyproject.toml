@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "readndraft-imap-mcp"
-version = "0.11.0"
+version = "0.12.1"
 description = "Capability-minimized IMAP MCP service"
 readme = "README.md"
 requires-python = ">=3.12.6"
@@ -22,9 +22,14 @@ classifiers = [
   "Topic :: Communications :: Email :: Post-Office :: IMAP",
 ]
 dependencies = [
+  # Remove the compromised emSign ECC G3 trust root (GHSA-6q48-6c7w-9gw2).
+  "certifi==2026.10.19",
   "css-inline==0.21.0",
   "keyring==25.7.0",
-  "mcp[cli]==1.29.0",
+  # Stay on the compatible 1.x line with the September/October security fixes.
+  "mcp[cli]==1.30.0",
+  # Security pin for MCP's JWT runtime dependency.
+  "PyJWT==2.15.1",
   "nh3==0.3.6",
   "SecretStorage==3.5.0; sys_platform == 'linux'",
   "tinycss2==1.5.1",
@@ -38,9 +43,16 @@ Issues = "https://github.com/LeoPhoenixT/readNdraft-imap-mcp/issues"
 
 [project.optional-dependencies]
 dev = [
+  # Security pins for pip-audit's cache dependencies.
+  "filelock==4.2.1",
+  "msgpack==1.2.3",
+  # pip vendors its own CA bundle; the standalone certifi pin cannot fix it.
+  "pip==26.2.2",
   "pip-audit==2.10.1",
   "pytest==9.1.1",
   "ruff==0.15.0",
+  # Security pin for pip-audit's HTTP dependency chain.
+  "urllib3==2.8.0",
 ]
 
 [project.scripts]

@@ -277,7 +277,6 @@ def test_write_batch_preserves_success_and_marks_only_uncertain_item_unknown() -
             (1, 2, 3),
             write,
             max_items=3,
-            response_timeout=False,
             write=True,
         )
     )
