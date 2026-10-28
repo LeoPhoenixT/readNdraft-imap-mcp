@@ -9,7 +9,6 @@ def test_readme_documents_plugin_setup_security_and_support() -> None:
         "uvx readndraft-imap-mcp@0.12.1 setup",
         "codex plugin add readndraft@readndraft",
         "/plugin install readndraft@readndraft",
-        "migrate-plugin --client codex",
         "cannot send, submit, or delete",
         "Batch-read plain text for up to 10 selected messages",
         "## Authorization boundary",
@@ -22,13 +21,26 @@ def test_readme_documents_plugin_setup_security_and_support() -> None:
         "complete HTML documents",
         "allowlisted CSS",
         "never fetched automatically",
-        "MCP_MIGRATION_0.10.0.md",
-        "MCP_MIGRATION_0.11.0.md",
-        "MCP_MIGRATION_0.9.0.md",
+        "docs/UPGRADING.md",
+        "CHANGELOG.md",
     ):
         assert required in text
     assert "uvx readndraft-imap-mcp approve" not in text
     assert "[mcp_servers.readndraft]" not in text
+
+
+def test_upgrade_guide_documents_legacy_and_contract_migrations() -> None:
+    text = Path("docs/UPGRADING.md").read_text(encoding="utf-8")
+    for required in (
+        "migrate-plugin --client codex",
+        "migrate-plugin --client claude-code",
+        "MCP_MIGRATION_0.9.0.md",
+        "MCP_MIGRATION_0.10.0.md",
+        "MCP_MIGRATION_0.11.0.md",
+        "ascending order",
+        "doctor --online",
+    ):
+        assert required in text
 
 
 def test_security_document_explains_inbound_and_outbound_html_policies() -> None:
