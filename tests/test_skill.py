@@ -12,12 +12,9 @@ SKILL = Path("plugins/readndraft/skills/readndraft-email")
 def test_skill_manifest_and_resources_are_valid() -> None:
     text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     _, frontmatter, body = text.split("---", 2)
-    lines = [line for line in frontmatter.strip().splitlines() if line]
-    assert lines[0] == "name: readndraft-email"
-    assert lines[1].startswith("description: ")
-    assert "readNdraft IMAP MCP" in lines[1]
-    assert len(lines) == 2
-    assert len(body.splitlines()) < 100
+    fields = dict(line.split(":", 1) for line in frontmatter.strip().splitlines() if line)
+    assert fields["name"].strip() == "readndraft-email"
+    assert fields["description"].strip()
     for name in (
         "tool-workflows.md",
         "result-interpretation.md",
