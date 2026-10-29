@@ -26,7 +26,6 @@ from readndraft_imap_mcp.mime.parser import (
     parse_message,
     plain_text,
     safe_headers,
-    sanitize_filename,
     sanitized_html,
 )
 
@@ -34,9 +33,9 @@ if TYPE_CHECKING:
     from readndraft_imap_mcp.broker.accounts import AccountConfig
 
 from .errors import ImapClientError, ImapMovePartialError
+from .mime_selection import body_candidates, contains_attached_message, part_message, selected_message_content
 from .models import (
     AttachmentContent,
-    AttachmentMetadata,
     DraftCreationResult,
     DraftUpdateResult,
     FlagChange,
@@ -62,11 +61,8 @@ from .parsing import (
     _expect_ok,
     _fetch_records,
     _first_payload,
-    _header_message,
     _message_content,
     _metadata_head,
-    _mime_parameter,
-    _mime_token,
     _parse_flags,
     _parse_internal_date,
     _parse_number,
@@ -747,65 +743,9 @@ class ImapClient:
             raise ValueError("selected MIME body exceeds the retrieval limit")
         return payload
 
-    @staticmethod
-    def _body_candidates(root: MimePart) -> tuple[list[MimePart], list[MimePart], list[MimePart]]:
-        plain: list[MimePart] = []
-        html: list[MimePart] = []
-        attachments: list[MimePart] = []
-
-        def visit(part: MimePart, inherited_attachment: bool = False) -> None:
-            blocked = inherited_attachment or part.is_attachment
-            if part.content_type == "message/rfc822":
-                # Existing parser deliberately does not descend into attached messages.
-                return
-            if part.children:
-                children = part.children
-                if part.content_type == "multipart/related" and children:
-                    start = (part.related_start or "").strip().strip("<>")
-                    children = tuple(
-                        child
-                        for child in children
-                        if (child.content_id or "").strip().strip("<>") == start
-                    ) or (children[0],)
-                for child in children:
-                    visit(child, blocked)
-                return
-            if blocked:
-                attachments.append(part)
-                return
-            if part.content_type == "text/plain":
-                plain.append(part)
-            elif part.content_type == "text/html":
-                html.append(part)
-
-        visit(root)
-        return plain, html, attachments
-
-    @staticmethod
-    def _part_message(part: MimePart, payload: bytes, *, filename: str | None = None):
-        """Build one standalone MIME entity for a BODY.PEEK section literal.
-
-        A HEADER.FIELDS literal can already end with its required empty line.
-        It must therefore never be prefixed to a selected part: doing so turns
-        this entity's Content-Type and CTE fields into body text.
-        """
-        content_type = _mime_token(part.content_type, "application/octet-stream")
-        cte = _mime_token(part.transfer_encoding or "7bit", "7bit")
-        # Charset is the only Content-Type parameter required to decode a
-        # selected text part.  Do not turn arbitrary server metadata into
-        # synthetic MIME headers.
-        parameters = b"".join(
-            parameter
-            for name, value in part.content_type_params
-            if name.casefold() == "charset" and (parameter := _mime_parameter(name, value)) is not None
-        )
-        header = b"Content-Type: " + content_type + parameters + b"\r\n"
-        if filename is not None:
-            quoted = _mime_parameter("filename", sanitize_filename(filename))
-            assert quoted is not None
-            header += b"Content-Disposition: attachment" + quoted + b"\r\n"
-        header += b"Content-Transfer-Encoding: " + cte + b"\r\n\r\n"
-        return parse_message(header + payload)
+    # Compatibility aliases for callers of the former session-local helpers.
+    _body_candidates = staticmethod(body_candidates)
+    _part_message = staticmethod(part_message)
 
     def _structured_message(
         self,
@@ -822,14 +762,11 @@ class ImapClient:
                 return None
         else:
             root, headers, flags, _ = prepared
-        plain, html, attachments = self._body_candidates(root)
+        plain, html, attachments = body_candidates(root)
 
         # message/rfc822 is a valid structure for which a faithful partial
         # reconstruction is unsafe; retain bounded legacy parsing.
-        def has_rfc(part: MimePart) -> bool:
-            return part.content_type == "message/rfc822" or any(has_rfc(child) for child in part.children)
-
-        if has_rfc(root):
+        if contains_attached_message(root):
             return None
         chosen_text = ""
         selected_size = 0
@@ -839,27 +776,15 @@ class ImapClient:
                     raise ValueError("selected MIME body exceeds the 2 MB limit")
                 continue
             payload = self._fetch_section(identity, part.section, MAX_TEXT_BYTES)
-            message = self._part_message(part, payload)
+            message = part_message(part, payload)
             value = plain_text(message)
             if value.strip():
                 chosen_text = value
                 selected_size = len(headers) + len(payload)
                 break
-        metadata = tuple(
-            AttachmentMetadata(
-                attachment_id=part.part_id,
-                filename=sanitize_filename(part.filename),
-                content_type=part.content_type,
-                size=None,
-                encoded_size=part.encoded_size,
-            )
-            for part in attachments
-        )
         if selected_size > max_source_bytes:
             raise ValueError("message exceeds the remaining retrieval limit")
-        return MessageContent(
-            identity, safe_headers(_header_message(headers)), chosen_text, flags, metadata, selected_size
-        )
+        return selected_message_content(identity, headers, flags, chosen_text, attachments, selected_size)
 
     def get_message(
         self,
@@ -881,12 +806,8 @@ class ImapClient:
         """
         try:
             root, headers, flags, message_size = self._fetch_structure(identity)
-            plain, html, _ = self._body_candidates(root)
-            def has_rfc(part: MimePart) -> bool:
-                return part.content_type == "message/rfc822" or any(has_rfc(child) for child in part.children)
-
-            has_rfc = has_rfc(root)
-            estimated = message_size if has_rfc else min(
+            plain, html, _ = body_candidates(root)
+            estimated = message_size if contains_attached_message(root) else min(
                 message_size,
                 len(headers) + sum(part.encoded_size for part in [*plain, *html]),
             )
@@ -940,14 +861,14 @@ class ImapClient:
     def get_html(self, identity: MessageIdentity) -> HtmlContent:
         try:
             root, headers, flags, _ = self._fetch_structure(identity)
-            _, html, _ = self._body_candidates(root)
+            _, html, _ = body_candidates(root)
             for part in html:
                 if part.section is None:
                     continue
                 if part.encoded_size > MAX_TEXT_BYTES:
                     raise ValueError("selected MIME body exceeds the 2 MB limit")
                 payload = self._fetch_section(identity, part.section, MAX_TEXT_BYTES)
-                value = sanitized_html(self._part_message(part, payload))
+                value = sanitized_html(part_message(part, payload))
                 if value.strip():
                     return HtmlContent(identity, value, flags)
             return HtmlContent(identity, "", flags)
@@ -965,7 +886,7 @@ class ImapClient:
             raise ValueError("invalid attachment_id")
         try:
             root, _, _, _ = self._fetch_structure(identity)
-            _, _, attachments = self._body_candidates(root)
+            _, _, attachments = body_candidates(root)
             part = next((item for item in attachments if item.part_id == attachment_id), None)
             if part is None or part.section is None:
                 raise KeyError("unknown attachment_id")
@@ -973,7 +894,7 @@ class ImapClient:
                 raise ValueError("attachment exceeds the 25 MB limit")
             payload = self._fetch_section(identity, part.section, 25 * 1024 * 1024)
             # Reuse the standard decoder with a standalone, safely quoted MIME entity.
-            content = get_attachment(self._part_message(part, payload, filename=part.filename), "part-1")
+            content = get_attachment(part_message(part, payload, filename=part.filename), "part-1")
             return replace(
                 content, metadata=replace(content.metadata, attachment_id=attachment_id, encoded_size=part.encoded_size)
             )
