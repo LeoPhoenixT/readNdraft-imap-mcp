@@ -7,7 +7,7 @@ same release as the plugin and runs through `uv`; it never sends email.
 Configure at least one IMAP account separately with:
 
 ```text
-uvx readndraft-imap-mcp@0.12.1 setup
+uvx readndraft-imap-mcp@0.12.2 setup
 ```
 
 Account configuration, credentials, audit history, downloaded attachments, and

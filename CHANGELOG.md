@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## 0.12.2
+
+### Fixed
+
+- Reject malformed IPC operation types before dispatch and return correlated
+  `invalid_request` errors without decoding validated frames twice.
+- Normalize mailbox flags and share IPC read-result decoding so mailbox, search,
+  and message models match direct broker results. The unavailable backend now
+  accepts the search pagination cursor and consistently reports its failure.
+
+### Changed
+
+- Extract pure BODYSTRUCTURE MIME selection and selected-part assembly while
+  retaining compatibility helpers, charset and transfer decoding, safe filenames,
+  and bounded fallback for attached messages.
+- Consolidate upgrade instructions and replace brittle implementation-shape
+  checks with focused behavior and compatibility coverage.
+- Pin CI and release uv to 0.13.4 for updated CA trust and pin development audit
+  cache dependencies filelock to 4.2.1 and msgpack to 1.2.3.
+- MCP tool schemas, IPC 12, authentication, and mail capabilities are unchanged.
+
 ## 0.12.1
 
 ### Security
