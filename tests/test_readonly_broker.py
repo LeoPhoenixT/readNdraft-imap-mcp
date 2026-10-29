@@ -103,30 +103,52 @@ def test_credential_and_imap_share_one_request_deadline() -> None:
     assert time.monotonic() - started < 0.08
 
 
-def test_timed_out_worker_holds_the_only_slot_until_it_really_finishes() -> None:
+def test_timed_out_worker_holds_the_only_slot_until_it_really_finishes(monkeypatch) -> None:
     entered = threading.Event()
     release = threading.Event()
 
     class BlockingClient(FakeClient):
         def list_mailboxes(self):
             entered.set()
-            assert release.wait(timeout=1)
+            assert release.wait(timeout=10)
             return super().list_mailboxes()
 
     broker = BrokerService(
         AccountRegistry([AccountConfig("personal", "pinned.example.com", 993, "leo@example.com")]),
-        FakeCredentialStore(), BlockingClient, request_timeout_seconds=0.05,
+        FakeCredentialStore(), BlockingClient, request_timeout_seconds=10,
         max_imap_workers=1, max_waiting_imap_work=0,
     )
-    with pytest.raises(TimeoutError):
-        asyncio.run(broker.list_mailboxes("personal"))
-    assert entered.is_set()
-    with pytest.raises(RequestQuotaError) as rejected:
-        asyncio.run(broker.list_mailboxes("personal"))
-    assert rejected.value.reason == "imap_worker_capacity"
-    release.set()
-    time.sleep(0.1)
-    assert asyncio.run(broker.list_mailboxes("personal"))[0].name == "INBOX"
+    original_wait_for = asyncio.wait_for
+
+    async def timeout_after_worker_starts(awaitable, timeout):
+        # Exercise a real response timeout only after the IMAP operation owns
+        # the slot; thread startup latency is not the behavior under test.
+        assert await asyncio.to_thread(entered.wait, 5)
+        return await original_wait_for(awaitable, timeout=0.01)
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(asyncio, "wait_for", timeout_after_worker_starts)
+            with pytest.raises(TimeoutError):
+                asyncio.run(broker.list_mailboxes("personal"))
+        with pytest.raises(RequestQuotaError) as rejected:
+            asyncio.run(broker.list_mailboxes("personal"))
+        assert rejected.value.reason == "imap_worker_capacity"
+    finally:
+        release.set()
+
+    # Closing the client and returning its permit happen on the worker thread.
+    # Wait for observable capacity recovery rather than assuming a fixed delay.
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            result = asyncio.run(broker.list_mailboxes("personal"))
+            break
+        except RequestQuotaError as error:
+            assert error.reason == "imap_worker_capacity"
+            assert time.monotonic() < deadline, "worker did not release its slot"
+            time.sleep(0.01)
+    assert result[0].name == "INBOX"
 
 
 def test_expired_batch_does_not_start_the_next_imap_command() -> None:

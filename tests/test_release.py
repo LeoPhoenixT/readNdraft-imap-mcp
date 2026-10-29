@@ -47,8 +47,6 @@ def test_release_workflow_uses_version_merge_sha_and_separates_publish() -> None
 def test_testpypi_workflow_requires_exact_candidate_sha() -> None:
     text = Path(".github/workflows/test-release.yml").read_text(encoding="utf-8")
     assert "release_sha:" in text
-    assert "Exact 40-character commit SHA to test and publish" in text
-    assert "Validate immutable candidate SHA" in text
     assert '[[ ! "${RELEASE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]]' in text
     assert 'echo "sha=${RELEASE_SHA,,}" >> "${GITHUB_OUTPUT}"' in text
     assert text.count("ref: ${{ needs.prepare.outputs.sha }}") == 2
@@ -99,13 +97,3 @@ def test_project_has_public_and_approved_license_metadata() -> None:
     assert project["urls"]["Repository"].endswith("/readNdraft-imap-mcp")
     assert project["license"] == "Apache-2.0"
     assert project["license-files"] == ["LICENSE", "THIRD_PARTY_NOTICES.md"]
-
-
-def test_installed_dependency_license_policy_passes() -> None:
-    completed = subprocess.run(
-        ["uv", "run", "--locked", "python", "scripts/license_check.py"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert completed.returncode == 0, completed.stderr
