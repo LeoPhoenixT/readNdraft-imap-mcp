@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 
 from readndraft_imap_mcp.imap.bodystructure import BodyStructureError, parse_bodystructure
-from readndraft_imap_mcp.imap.client import ImapClient, _response_bytes
+from readndraft_imap_mcp.imap.mime_selection import body_candidates
+from readndraft_imap_mcp.imap.parsing import _response_bytes
 
 
 def test_bodystructure_maps_preorder_part_ids_sections_and_encoded_attachment_size() -> None:
@@ -132,6 +133,6 @@ def test_related_start_uses_normalized_content_id_and_only_root() -> None:
         b'("TEXT" "PLAIN" NIL "<other>" NIL "7BIT" 4 1 NIL NIL NIL NIL) "RELATED" '
         b'("START" "root"))'
     )
-    plain, html, attachments = ImapClient._body_candidates(root)
+    plain, html, attachments = body_candidates(root)
     assert not plain and not attachments
     assert [part.section for part in html] == ["1"]

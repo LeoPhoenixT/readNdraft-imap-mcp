@@ -28,16 +28,14 @@ from readndraft_imap_mcp.imap.models import (
     SearchResult,
 )
 from readndraft_imap_mcp.ipc.contract import (
-    ALLOWED_OPERATIONS as CONTRACT_OPERATIONS,
-)
-from readndraft_imap_mcp.ipc.contract import (
+    _PARAMETERS,
+    ALLOWED_OPERATIONS,
     REQUEST_SCHEMAS,
     RESPONSE_SCHEMAS,
     SCHEMA_DEFINITIONS,
     canonical_tool_schema_digest,
     resolve_response_schema,
 )
-from readndraft_imap_mcp.ipc.rpc import _PARAMETERS, ALLOWED_OPERATIONS
 from readndraft_imap_mcp.mcp_server.server import create_server
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
@@ -72,7 +70,6 @@ def _contract_digest() -> str:
 
 
 def test_wire_contract_is_pinned_to_protocol_version():
-    assert CONTRACT_OPERATIONS == ALLOWED_OPERATIONS
     assert (IPC_PROTOCOL_VERSION, _contract_digest()) == (
         EXPECTED_PROTOCOL_VERSION,
         EXPECTED_CONTRACT_DIGEST,

@@ -9,7 +9,6 @@ from readndraft_imap_mcp.drafts import DraftProvenance
 from readndraft_imap_mcp.imap.bodystructure import MimePart
 from readndraft_imap_mcp.imap.client import ImapClient, ImapClientError
 from readndraft_imap_mcp.imap.models import MessageIdentity, SearchFilters
-from readndraft_imap_mcp.mime.parser import get_attachment, plain_text, sanitize_filename
 
 
 class ReadConnection:
@@ -115,43 +114,6 @@ def test_singlepart_bodystructure_fetches_section_one_instead_of_full_message() 
     assert ("FETCH", "7", "(UID BODY.PEEK[1])") in connection.commands
     assert all("BODY.PEEK[]" not in command[2] for command in connection.commands if command[0] == "FETCH")
 
-
-def test_selected_part_preserves_bodystructure_charset_without_top_headers() -> None:
-    part = MimePart(
-        "part-1",
-        "1",
-        "text/plain",
-        "base64",
-        8,
-        None,
-        None,
-        None,
-        content_type_params=(("charset", "iso-8859-1"),),
-    )
-
-    message = ImapClient._part_message(part, b"Y2Fm6Q==")
-
-    assert plain_text(message) == "café"
-
-
-def test_selected_attachment_uses_safe_filename_and_transfer_decoder() -> None:
-    part = MimePart(
-        "part-3",
-        "2",
-        "application/octet-stream",
-        "base64",
-        8,
-        'report".txt\r\nX-Injected: yes',
-        "attachment",
-        None,
-    )
-
-    message = ImapClient._part_message(part, b"dGVzdA==", filename=part.filename)
-    content = get_attachment(message, "part-1")
-
-    assert content.content == b"test"
-    assert content.metadata.filename == sanitize_filename(part.filename)
-    assert message["X-Injected"] is None
 
 
 class MailboxListConnection:
@@ -728,3 +690,32 @@ def test_draft_update_fails_without_safe_extension() -> None:
             "<id@example.com>",
             (),
         )
+
+
+@pytest.mark.parametrize("reserved", [False, True])
+def test_attached_message_fallback_reserves_full_source_before_fetch(monkeypatch, reserved) -> None:
+    client = object.__new__(ImapClient)
+    identity = MessageIdentity("synthetic", "INBOX", "42", "7")
+    root = MimePart("part-1", "1", "message/rfc822", "7bit", 150, "forward.eml", "attachment", None)
+    calls = []
+    monkeypatch.setattr(client, "_fetch_structure", lambda value: (root, b"Subject: outer\r\n", (r"\Seen",), 150))
+
+    def reserve_source(size):
+        calls.append(("reserve", size))
+        return reserved
+
+    def fetch_message(value, maximum):
+        assert calls == [("reserve", 150)]
+        calls.append(("fetch", value))
+        return b"Subject: outer\r\n\r\nouter body", (r"\Seen",)
+
+    monkeypatch.setattr(client, "_fetch_message", fetch_message)
+    if reserved:
+        message = client.get_message_budgeted(identity, reserve_source)
+        assert message.text == "outer body"
+        assert message.flags == (r"\Seen",)
+        assert calls[-1] == ("fetch", identity)
+    else:
+        with pytest.raises(ValueError, match="remaining retrieval limit"):
+            client.get_message_budgeted(identity, reserve_source)
+        assert calls == [("reserve", 150)]

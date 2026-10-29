@@ -21,7 +21,6 @@ from .codec import (
     MAX_FRAME_BYTES,
     RPC_RESPONSE_TIMEOUT_SECONDS,
     _decode_envelope,
-    _decode_request,
     _encode,
     _validate_request,
 )
@@ -156,6 +155,14 @@ class BrokerTransportRuntime:
             request = _decode_envelope(raw)
             request_id = request["request_id"]
             _validate_request(request)
+        except Exception as exc:
+            return self._error_response(request_id, exc)
+        return self._handle_request(request)
+
+    def _handle_request(self, request: dict[str, Any]) -> bytes:
+        """Dispatch an envelope already validated at the frame boundary."""
+        request_id = request["request_id"]
+        try:
             coroutine = self._dispatch(request["operation"], request["params"])
             if request["operation"] not in {"health", "shutdown", "frontend_lease"}:
                 coroutine = asyncio.wait_for(coroutine, BROKER_WATCHDOG_TIMEOUT_SECONDS)
@@ -163,24 +170,24 @@ class BrokerTransportRuntime:
             result = future.result(timeout=RPC_RESPONSE_TIMEOUT_SECONDS)
             return _encode({"request_id": request_id, "ok": True, "result": result})
         except Exception as exc:
-            error = _safe_error(exc)
-            return _encode(
-                {
-                    "request_id": request_id,
-                    "ok": False,
-                    "error": asdict(error),
-                }
-            )
+            return self._error_response(request_id, exc)
+
+    @staticmethod
+    def _error_response(request_id: str | None, exc: Exception) -> bytes:
+        return _encode({"request_id": request_id, "ok": False, "error": asdict(_safe_error(exc))})
 
     def _serve_connection(self, connection) -> None:
         self._client_started()
         try:
             with connection:
                 raw = connection.recv_bytes(MAX_FRAME_BYTES)
+                request_id = None
                 try:
-                    request = _decode_request(raw)
-                except ValueError:
-                    connection.send_bytes(self.handle_frame(raw))
+                    request = _decode_envelope(raw)
+                    request_id = request["request_id"]
+                    _validate_request(request)
+                except Exception as exc:
+                    connection.send_bytes(self._error_response(request_id, exc))
                     return
                 if request["operation"] == "frontend_lease":
                     connection.send_bytes(
@@ -197,7 +204,7 @@ class BrokerTransportRuntime:
                     # countdown only after the final frontend disconnects.
                     connection.recv_bytes(MAX_FRAME_BYTES)
                     return
-                connection.send_bytes(self.handle_frame(raw))
+                connection.send_bytes(self._handle_request(request))
         except (EOFError, OSError):
             pass
         finally:

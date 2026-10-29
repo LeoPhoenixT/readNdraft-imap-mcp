@@ -153,7 +153,7 @@ class UnavailableBroker:
 
 
     async def search_email_targets(
-        self, targets, filters, limit=50
+        self, targets, filters, limit=50, cursor=None
     ):
         return self._unavailable()
 

@@ -294,7 +294,7 @@ class IpcBrokerClient:
             MailboxBatchResult(
                 account_id=item["account_id"],
                 ok=item["ok"],
-                mailboxes=tuple(Mailbox(**mailbox) for mailbox in item["mailboxes"]),
+                mailboxes=tuple(_mailbox(mailbox) for mailbox in item["mailboxes"]),
                 error=_optional_safe_error(item["error"]),
             )
             for item in await self._request("list_mailboxes", {"account_ids": list(account_ids)})
@@ -310,16 +310,7 @@ class IpcBrokerClient:
                 "limit": limit,
             },
         )
-        return tuple(
-            SearchResult(
-                identity=MessageIdentity(**item["identity"]),
-                headers=item["headers"],
-                flags=tuple(item["flags"]),
-                size=item["size"],
-                received_at=item.get("received_at", ""),
-            )
-            for item in result
-        )
+        return tuple(_search_result(item) for item in result)
 
     async def search_email_targets(self, targets, filters, limit=50, cursor=None):
         result = await self._request(
@@ -332,16 +323,7 @@ class IpcBrokerClient:
             },
         )
         return SearchPage(
-            results=tuple(
-                SearchResult(
-                    identity=MessageIdentity(**item["identity"]),
-                    headers=item["headers"],
-                    flags=tuple(item["flags"]),
-                    size=item["size"],
-                    received_at=item["received_at"],
-                )
-                for item in result["results"]
-            ),
+            results=tuple(_search_result(item) for item in result["results"]),
             errors=tuple(
                 SearchTargetError(item["account_id"], item["mailbox"], _safe_error_from_json(item["error"]))
                 for item in result["errors"]
@@ -368,16 +350,7 @@ class IpcBrokerClient:
             "get_email",
             {"identity": asdict(identity), "max_text_chars": max_text_chars},
         )
-        return MessageContent(
-            identity=MessageIdentity(**item["identity"]),
-            headers=item["headers"],
-            text=item["text"],
-            flags=tuple(item["flags"]),
-            attachments=tuple(AttachmentMetadata(**value) for value in item["attachments"]),
-            source_size=item.get("source_size", 0),
-            text_total_chars=item.get("text_total_chars", len(item["text"])),
-            text_truncated=item.get("text_truncated", False),
-        )
+        return _message(item)
 
     async def get_emails(self, identities, max_text_chars=None):
         items = await self._request(
@@ -481,6 +454,20 @@ def _json_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
         for key, value in kwargs.items()
         if key != "reply_to_message" or value is not None
     }
+
+
+def _mailbox(item: dict[str, Any]) -> Mailbox:
+    return Mailbox(**{**item, "flags": tuple(item["flags"])})
+
+
+def _search_result(item: dict[str, Any]) -> SearchResult:
+    return SearchResult(
+        identity=MessageIdentity(**item["identity"]),
+        headers=item["headers"],
+        flags=tuple(item["flags"]),
+        size=item["size"],
+        received_at=item.get("received_at", ""),
+    )
 
 
 def _flag_change(item: dict[str, Any]) -> FlagChange:

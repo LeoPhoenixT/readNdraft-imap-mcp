@@ -55,7 +55,7 @@ def _filters_to_json(filters: SearchFilters) -> dict[str, Any]:
 
 
 def _request_frame(operation: str, params: dict[str, Any]) -> dict[str, Any]:
-    if operation not in ALLOWED_OPERATIONS:
+    if not isinstance(operation, str) or operation not in ALLOWED_OPERATIONS:
         raise ValueError("operation is not allowed")
     return {"request_id": secrets.token_hex(16), "operation": operation, "params": params}
 
@@ -81,7 +81,11 @@ def _decode_envelope(raw: bytes) -> dict[str, Any]:
 
 
 def _validate_request(value: dict[str, Any]) -> dict[str, Any]:
-    if value["operation"] not in ALLOWED_OPERATIONS or not isinstance(value["params"], dict):
+    if (
+        not isinstance(value["operation"], str)
+        or value["operation"] not in ALLOWED_OPERATIONS
+        or not isinstance(value["params"], dict)
+    ):
         raise ValueError("operation is not allowed")
     required, optional = _PARAMETERS[value["operation"]]
     supplied = frozenset(value["params"])

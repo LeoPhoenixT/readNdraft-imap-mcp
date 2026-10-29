@@ -24,18 +24,17 @@ from readndraft_imap_mcp.imap.models import (
     MoveResult,
 )
 from readndraft_imap_mcp.ipc import client as rpc_module
+from readndraft_imap_mcp.ipc.client import IpcBrokerClient, _json_kwargs
 from readndraft_imap_mcp.ipc.codec import (
     BROKER_REQUEST_TIMEOUT_SECONDS,
     BROKER_WATCHDOG_TIMEOUT_SECONDS,
     RPC_RESPONSE_TIMEOUT_SECONDS,
-)
-from readndraft_imap_mcp.ipc.rpc import (
-    BrokerRpcServer,
-    IpcBrokerClient,
-    RpcError,
     _decode_request,
     _encode,
-    _json_kwargs,
+)
+from readndraft_imap_mcp.ipc.contract import RpcError
+from readndraft_imap_mcp.ipc.server import BrokerRpcServer
+from readndraft_imap_mcp.ipc.transport import (
     _safe_error,
 )
 from readndraft_imap_mcp.mime.html import AuthoredHtmlError
@@ -700,3 +699,107 @@ def test_runtime_loop_stops_after_requested_shutdown() -> None:
     while not loop.is_closed() and time.monotonic() < deadline:
         time.sleep(0.01)
     assert loop.is_closed()
+
+
+@pytest.mark.parametrize(
+    ("operation", "params"),
+    [
+        ([], {}),
+        ({}, {}),
+        (None, {}),
+        (True, {}),
+        (42, {}),
+        ("send_email", {}),
+        ("list_accounts", []),
+        ("frontend_lease", {"unexpected": True}),
+    ],
+)
+def test_connection_returns_correlated_invalid_request_without_dispatch(operation, params) -> None:
+    class RejectDispatchBroker:
+        def list_accounts(self):
+            raise AssertionError("invalid request reached the broker")
+
+    class Connection:
+        def __init__(self):
+            self.sent = []
+            self.closed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.closed = True
+
+        def recv_bytes(self, maximum):
+            return _frame(operation, params)
+
+        def send_bytes(self, response):
+            self.sent.append(json.loads(response))
+
+    server = BrokerRpcServer(RejectDispatchBroker(), "unused", b"x")
+    connection = Connection()
+
+    server._transport._serve_connection(connection)
+
+    assert len(connection.sent) == 1
+    response = connection.sent[0]
+    assert response["request_id"] == "0" * 32
+    assert response["ok"] is False
+    assert response["error"]["code"] == "invalid_request"
+    assert connection.closed
+    assert server._transport._active_clients == 0
+    assert server._transport._runtime_started is False
+
+
+def test_ipc_read_models_match_direct_broker_results() -> None:
+    from readndraft_imap_mcp.imap.models import SearchFilters, SearchPage, SearchResult
+
+    identity = MessageIdentity("synthetic", "INBOX", "42", "7")
+    mailboxes = (
+        MailboxBatchResult("synthetic", True, (Mailbox("INBOX", "/", (r"\HasNoChildren",)),)),
+    )
+    search = (SearchResult(identity, {"subject": "synthetic"}, (r"\Seen",), 100, "2026-10-01T00:00:00Z"),)
+    message = MessageContent(identity, {"subject": "synthetic"}, "preview", (r"\Seen",), (), 100, 20, True)
+    page = SearchPage(search, (), None, False, "mailbox_uid_desc")
+
+    class ReadBroker:
+        async def list_mailboxes_batch(self, account_ids):
+            return mailboxes
+
+        async def search_emails(self, *args):
+            return search
+
+        async def search_email_targets(self, *args):
+            return page
+
+        async def get_email(self, *args):
+            return message
+
+        async def get_emails(self, *args):
+            return (BatchMessageContent(identity, True, message),)
+
+    broker = ReadBroker()
+    server = BrokerRpcServer(broker, "unused", b"x")
+
+    class LoopbackClient(IpcBrokerClient):
+        async def _request(self, operation, params):
+            response = json.loads(server.handle_frame(_frame(operation, params)))
+            assert response["ok"]
+            return response["result"]
+
+    async def compare():
+        client = LoopbackClient("unused", b"x")
+        decoded_mailboxes = await client.list_mailboxes_batch(("synthetic",))
+        assert decoded_mailboxes == await broker.list_mailboxes_batch(("synthetic",))
+        mailbox = decoded_mailboxes[0].mailboxes[0]
+        assert hash(mailbox) == hash(mailboxes[0].mailboxes[0])
+        assert mailbox.flags == (r"\HasNoChildren",)
+        assert await client.search_emails("synthetic", "INBOX", SearchFilters()) == search
+        assert await client.search_email_targets((("synthetic", "INBOX"),), SearchFilters()) == page
+        assert await client.get_email(identity, 7) == message
+        assert (await client.get_emails((identity,), 7))[0].message == message
+
+    try:
+        asyncio.run(compare())
+    finally:
+        server.request_shutdown()
