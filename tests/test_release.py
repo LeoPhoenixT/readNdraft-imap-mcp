@@ -21,13 +21,17 @@ def test_release_accepts_approved_license() -> None:
 
 def test_release_workflow_uses_version_merge_sha_and_separates_publish() -> None:
     text = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    verify = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "branches: [main]" in text
     assert "- pyproject.toml" in text
     assert 'tags:\n      - "v[0-9]+' not in text
     assert "BEFORE_SHA: ${{ github.event.before }}" in text
     assert "RELEASE_SHA: ${{ github.sha }}" in text
     assert "current != previous" in text
-    assert "ref: ${{ needs.prepare.outputs.sha }}" in text
+    assert "uses: ./.github/workflows/ci.yml" in text
+    assert "uses: ./.github/workflows/build.yml" in text
+    assert text.count("sha: ${{ needs.prepare.outputs.sha }}") == 2
+    assert "release_tag: ${{ needs.prepare.outputs.tag }}" in text
     assert "git tag -a \"${RELEASE_TAG}\" \"${RELEASE_SHA}\"" in text
     assert "git rev-list -n 1 \"${RELEASE_TAG}\"" in text
     assert "needs: [prepare, test]" in text
@@ -41,21 +45,41 @@ def test_release_workflow_uses_version_merge_sha_and_separates_publish() -> None
     assert "GH_REPO: ${{ github.repository }}" in text
     assert "--generate-notes" in text
     assert "persist-credentials: false" in text
-    assert "scripts/validate_plugin_versions.py" in text
+    assert "scripts/validate_plugin_versions.py" in verify
 
 
 def test_testpypi_workflow_requires_exact_candidate_sha() -> None:
     text = Path(".github/workflows/test-release.yml").read_text(encoding="utf-8")
+    verify = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "release_sha:" in text
     assert '[[ ! "${RELEASE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]]' in text
     assert 'echo "sha=${RELEASE_SHA,,}" >> "${GITHUB_OUTPUT}"' in text
-    assert text.count("ref: ${{ needs.prepare.outputs.sha }}") == 2
+    assert "uses: ./.github/workflows/ci.yml" in text
+    assert "uses: ./.github/workflows/build.yml" in text
+    assert text.count("sha: ${{ needs.prepare.outputs.sha }}") == 2
     assert "ref: ${{ inputs.release_sha }}" not in text
     assert "ref: ${{ github.event.repository.default_branch }}" not in text
     assert "needs: [prepare, test]" in text
     assert "needs: [prepare, build]" in text
-    assert "scripts/validate_plugin_versions.py" in text
+    assert "release_tag: ${{ inputs.release_tag }}" in text
+    assert "scripts/validate_plugin_versions.py" in verify
     assert "testpypi-dist-${{ needs.prepare.outputs.sha }}" in text
+
+
+def test_shared_verification_runs_each_matrix_interpreter() -> None:
+    ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    verify = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    build = Path(".github/workflows/build.yml").read_text(encoding="utf-8")
+    assert "pull_request:" in ci and "workflow_call:" in ci
+    assert "uses: ./.github/workflows/build.yml" in ci
+    assert "workflow_call:" in verify and "workflow_call:" in build
+    assert 'python: ["3.12", "3.13", "3.14"]' in verify
+    assert "uv sync --locked --extra dev --python ${{ matrix.python }}" in verify
+    assert "uv run --locked --python ${{ matrix.python }}" in verify
+    assert "sys.version_info[:2]" in verify
+    assert "scripts/release_check.py" in verify
+    assert "scripts/validate_plugin_versions.py" in verify
+    assert "scripts/release_smoke.py" in build
 
 
 def test_built_distributions_contain_unified_cli_and_plugin_skill(tmp_path) -> None:
