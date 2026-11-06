@@ -12,6 +12,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   prepare:
     runs-on: ubuntu-latest
@@ -32,86 +35,21 @@ jobs:
 
   test:
     needs: [prepare]
-    name: ${{ matrix.os }} / Python ${{ matrix.python }}
-    runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-        python: ["3.12", "3.13", "3.14"]
-    steps:
-      - name: Check out candidate commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.13.4"
-          enable-cache: false
-
-      - name: Install Python
-        run: uv python install ${{ matrix.python }}
-
-      - name: Install locked dependencies
-        run: uv sync --locked --extra dev
-
-      - name: Verify release metadata and requested tag
-        run: |
-          uv run --locked python scripts/release_check.py --tag "${{ inputs.release_tag }}"
-          uv run --locked python scripts/validate_plugin_versions.py
-
-      - name: Run tests
-        run: uv run --locked pytest
-
-      - name: Lint
-        run: uv run --locked ruff check src
-
-      - name: Enforce capability and secret policy
-        run: uv run --locked python scripts/security_check.py
-
-      - name: Audit installed dependencies
-        run: uv run --locked pip-audit --local --cache-dir .pip-audit-cache
-
-      - name: Enforce dependency license policy
-        run: uv run --locked python scripts/license_check.py
+    uses: ./.github/workflows/verify.yml
+    with:
+      sha: ${{ needs.prepare.outputs.sha }}
+      release_tag: ${{ inputs.release_tag }}
 
   build:
     needs: [prepare, test]
-    runs-on: ubuntu-latest
     permissions:
       contents: read
-    steps:
-      - name: Check out candidate commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          version: "0.13.4"
-          enable-cache: false
-
-      - name: Build distributions
-        run: uv build --no-sources
-
-      - name: Smoke test wheel
-        run: uv run --isolated --no-project --with dist/*.whl scripts/release_smoke.py
-
-      - name: Smoke test source distribution
-        run: uv run --isolated --no-project --with dist/*.tar.gz scripts/release_smoke.py
-
-      - name: Upload distributions
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: testpypi-dist-${{ needs.prepare.outputs.sha }}
-          path: dist/
+    uses: ./.github/workflows/build.yml
+    with:
+      sha: ${{ needs.prepare.outputs.sha }}
+      artifact_name: testpypi-dist-${{ needs.prepare.outputs.sha }}
 
   publish:
     needs: [prepare, build]
