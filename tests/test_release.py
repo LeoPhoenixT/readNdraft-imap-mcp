@@ -21,14 +21,14 @@ def test_release_accepts_approved_license() -> None:
 
 def test_release_workflow_uses_version_merge_sha_and_separates_publish() -> None:
     text = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    verify = Path(".github/workflows/verify.yml").read_text(encoding="utf-8")
+    verify = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "branches: [main]" in text
     assert "- pyproject.toml" in text
     assert 'tags:\n      - "v[0-9]+' not in text
     assert "BEFORE_SHA: ${{ github.event.before }}" in text
     assert "RELEASE_SHA: ${{ github.sha }}" in text
     assert "current != previous" in text
-    assert "uses: ./.github/workflows/verify.yml" in text
+    assert "uses: ./.github/workflows/ci.yml" in text
     assert "uses: ./.github/workflows/build.yml" in text
     assert text.count("sha: ${{ needs.prepare.outputs.sha }}") == 2
     assert "release_tag: ${{ needs.prepare.outputs.tag }}" in text
@@ -50,11 +50,11 @@ def test_release_workflow_uses_version_merge_sha_and_separates_publish() -> None
 
 def test_testpypi_workflow_requires_exact_candidate_sha() -> None:
     text = Path(".github/workflows/test-release.yml").read_text(encoding="utf-8")
-    verify = Path(".github/workflows/verify.yml").read_text(encoding="utf-8")
+    verify = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "release_sha:" in text
     assert '[[ ! "${RELEASE_SHA}" =~ ^[0-9a-fA-F]{40}$ ]]' in text
     assert 'echo "sha=${RELEASE_SHA,,}" >> "${GITHUB_OUTPUT}"' in text
-    assert "uses: ./.github/workflows/verify.yml" in text
+    assert "uses: ./.github/workflows/ci.yml" in text
     assert "uses: ./.github/workflows/build.yml" in text
     assert text.count("sha: ${{ needs.prepare.outputs.sha }}") == 2
     assert "ref: ${{ inputs.release_sha }}" not in text
@@ -68,9 +68,9 @@ def test_testpypi_workflow_requires_exact_candidate_sha() -> None:
 
 def test_shared_verification_runs_each_matrix_interpreter() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
-    verify = Path(".github/workflows/verify.yml").read_text(encoding="utf-8")
+    verify = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     build = Path(".github/workflows/build.yml").read_text(encoding="utf-8")
-    assert "uses: ./.github/workflows/verify.yml" in ci
+    assert "pull_request:" in ci and "workflow_call:" in ci
     assert "uses: ./.github/workflows/build.yml" in ci
     assert "workflow_call:" in verify and "workflow_call:" in build
     assert 'python: ["3.12", "3.13", "3.14"]' in verify

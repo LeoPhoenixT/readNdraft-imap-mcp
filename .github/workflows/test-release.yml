@@ -37,7 +37,7 @@ jobs:
     needs: [prepare]
     permissions:
       contents: read
-    uses: ./.github/workflows/verify.yml
+    uses: ./.github/workflows/ci.yml
     with:
       sha: ${{ needs.prepare.outputs.sha }}
       release_tag: ${{ inputs.release_tag }}
