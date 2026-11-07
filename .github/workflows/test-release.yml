@@ -79,4 +79,5 @@ jobs:
         run: >-
           uv publish
           --publish-url https://test.pypi.org/legacy/
+          --check-url https://test.pypi.org/simple/
           --trusted-publishing always
