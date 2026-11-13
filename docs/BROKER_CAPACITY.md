@@ -1,9 +1,10 @@
 # Broker capacity and IPC 13 migration
 
-This unreleased change uses IPC 13 without changing the package version. The
-versioned endpoint prevents a newer frontend from reusing an IPC 12 broker.
-Update both processes together. MCP tool names and input/output schemas remain
-unchanged; the internal health response and structured error reasons expand.
+Version 0.13.0 uses IPC 13. The versioned endpoint prevents a newer frontend
+from reusing an IPC 12 broker. Update both processes together using the
+[upgrade guide](UPGRADING.md#upgrading-to-0130). MCP tool names and
+input/output schemas remain unchanged. The internal health response and
+structured error reasons expand.
 
 ## Task admission
 

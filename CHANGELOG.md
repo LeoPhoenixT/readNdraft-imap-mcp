@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## 0.13.0
+
+### Changed
+
+- Upgrade the local broker protocol to IPC 13. Update the frontend and broker
+  together. MCP tool schemas and mail permissions remain unchanged.
+- Bound credential work, IMAP session queues, and IPC connections. Schedule
+  account queues in round-robin order, reserve separate capacity for health and
+  shutdown requests, and expose aggregate usage and rejection counters.
+- Share release verification and packaging across workflows. When retrying a
+  package upload, verify the hashes of files already present on the index.
+
+### Fixed
+
+- Bound authentication and initial-frame waits and handle cancellation of
+  pending Windows named-pipe reads. Frontends receive a structured error when
+  the lease limit is reached.
+- Keep credential work and IMAP cleanup counted until they finish. When a
+  credential deadline expires, keep completed batch results and stop starting
+  new items in that request.
+- Use a private short Unix socket path when the configured runtime path is too
+  long to bind. Account data and broker locks stay in their configured locations.
+
 ## 0.12.2
 
 ### Fixed
