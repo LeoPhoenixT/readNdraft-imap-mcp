@@ -110,3 +110,15 @@ def test_session_queue_deadline_is_structured_and_releases_after_exception() -> 
         assert quota.usage()["rejections"]["session_queue_timeout"] == 1
 
     asyncio.run(scenario())
+
+
+def test_capacity_name_has_legacy_compatibility_without_changing_token_policy():
+    for argument in ({"task_bucket_capacity": 2}, {"requests_per_minute": 2}):
+        quota = AccountRequestQuota(**argument, clock=lambda: 100.0)
+        quota.admit_task(("a", "a"))
+        quota.admit_task(("a",))
+        with pytest.raises(RequestQuotaError):
+            quota.admit_task(("a",))
+        assert quota.limits()["task_bucket_capacity"] == 2
+    with pytest.raises(ValueError, match="not both"):
+        AccountRequestQuota(task_bucket_capacity=2, requests_per_minute=2)

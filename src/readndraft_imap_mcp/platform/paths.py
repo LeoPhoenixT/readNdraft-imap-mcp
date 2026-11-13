@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import os
 import secrets
+import stat
 import sys
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
+
+# Reserve the terminating NUL, including on POSIX review hosts with a smaller
+# sockaddr_un than Linux. The limit applies to encoded bytes, not characters.
+_UNIX_SOCKET_PATH_MAX_BYTES = 103
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,9 +68,28 @@ class AppPaths:
             return (
                 rf"\\.\pipe\readndraft-broker-v{IPC_PROTOCOL_VERSION}-{namespace}"
             )
-        return str(self.runtime_dir / f"broker-v{IPC_PROTOCOL_VERSION}.sock")
+        filename = f"broker-v{IPC_PROTOCOL_VERSION}.sock"
+        address = self.runtime_dir / filename
+        if len(os.fsencode(address)) <= _UNIX_SOCKET_PATH_MAX_BYTES:
+            return str(address)
+        namespace = sha256(str(self.runtime_dir.resolve(strict=False)).encode("utf-8")).hexdigest()[:32]
+        return str(Path("/tmp") / f"readndraft-{os.getuid()}-{namespace}" / filename)
+
+    def _ensure_private_socket_directory(self) -> None:
+        if sys.platform == "win32":
+            return
+        directory = Path(self.ipc_address).parent
+        if directory == self.runtime_dir:
+            return
+        directory.mkdir(mode=0o700, exist_ok=True)
+        metadata = directory.lstat()
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid():
+            raise PermissionError("IPC socket directory must be a real directory owned by the current user")
+        if metadata.st_mode & 0o077:
+            raise PermissionError("IPC socket directory must not be group/world accessible")
 
     def ensure_private(self) -> None:
+        self._ensure_private_socket_directory()
         for path in (self.config_dir, self.state_dir, self.runtime_dir, self.effective_data_dir):
             path.mkdir(parents=True, exist_ok=True)
             if os.name != "nt":

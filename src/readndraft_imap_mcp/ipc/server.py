@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import os
-import platform
-import threading
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from readndraft_imap_mcp import __version__
-from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
+from readndraft_imap_mcp.broker.protocol import HealthResponse
+from readndraft_imap_mcp.broker.settings import DEFAULT_CAPACITY, CapacitySettings
 from readndraft_imap_mcp.safe_error import SafeError
 
 from .codec import _filters_from_json, _identity
@@ -35,6 +32,7 @@ class BrokerRpcServer:
         *,
         idle_timeout_seconds: float | None = None,
         shutdown_grace_seconds: float = 10,
+        capacity_settings: CapacitySettings = DEFAULT_CAPACITY,
     ) -> None:
         self.broker = broker
         from .transport import BrokerTransportRuntime
@@ -45,6 +43,7 @@ class BrokerRpcServer:
             authkey,
             idle_timeout_seconds=idle_timeout_seconds,
             shutdown_grace_seconds=shutdown_grace_seconds,
+            capacity_settings=capacity_settings,
         )
 
     def handle_frame(self, raw: bytes) -> bytes:
@@ -54,7 +53,12 @@ class BrokerRpcServer:
         self._transport.request_shutdown()
 
     def serve_forever(self) -> None:
-        self._transport.serve_forever()
+        try:
+            self._transport.serve_forever()
+        finally:
+            close = getattr(self.broker, "close", None)
+            if callable(close):
+                close(wait=False)
 
     def _graceful_shutdown(self) -> None:
         self._transport._graceful_shutdown()
@@ -67,46 +71,16 @@ class BrokerRpcServer:
 
     async def dispatch(self, operation: str, params: dict[str, Any]) -> object:
         if operation == "health":
-            health = {
-                "ok": True,
-                "status": "healthy",
-                "protocol_version": IPC_PROTOCOL_VERSION,
-                "package_version": __version__,
-                "python_version": platform.python_version(),
-                "python_implementation": platform.python_implementation(),
-                "pid": os.getpid(),
-            }
+            health = HealthResponse().to_dict()
             resource_snapshot = getattr(self.broker, "resource_snapshot", None)
             if callable(resource_snapshot):
                 health.update(resource_snapshot())
-            else:
-                health.update(
-                    {
-                        "resource_limits": {
-                            "task_bucket_capacity": 120,
-                            "task_refill_per_second": 2.0,
-                            "account_sessions": 2,
-                            "imap_workers": 8,
-                            "waiting_imap_work": 16,
-                        },
-                        "resource_usage": {
-                            "active_sessions": 0,
-                            "queued_session_requests": 0,
-                            "rejections": {
-                                "task_rate": 0,
-                                "session_queue_timeout": 0,
-                                "imap_worker_capacity": 0,
-                            },
-                        },
-                    }
-                )
+            health["resource_usage"].update(self._transport.resource_snapshot())
+            transport_limits = asdict(self._transport._settings)
+            health["resource_limits"].update({key: value for key, value in transport_limits.items()
+                                               if key.startswith("ipc_")})
             return health
         if operation == "shutdown":
-            threading.Thread(
-                target=self._graceful_shutdown,
-                daemon=True,
-                name="readndraft-shutdown",
-            ).start()
             return {"shutdown": True}
         if operation == "list_accounts":
             return self.broker.list_accounts()

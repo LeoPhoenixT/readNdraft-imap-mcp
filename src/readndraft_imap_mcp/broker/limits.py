@@ -1,52 +1,16 @@
 from __future__ import annotations
 
-import asyncio
 import math
 import threading
-from collections import defaultdict, deque
-from dataclasses import dataclass
+from collections import defaultdict
 from time import monotonic
 from typing import Hashable
 
+from .errors import RequestQuotaError as RequestQuotaError
+from .scheduler import SessionPermit, WorkScheduler
+from .settings import DEFAULT_CAPACITY
+
 PhysicalAccountKey = tuple[str, int, str]
-
-
-class RequestQuotaError(RuntimeError):
-    """Raised when an account exceeds its local request budget."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        code: str = "rate_limited",
-        reason: str = "task_rate",
-        retry_after_seconds: int | None = None,
-    ) -> None:
-        self.code = code
-        self.reason = reason
-        self.retry_after_seconds = retry_after_seconds
-        super().__init__(message)
-
-
-@dataclass(slots=True)
-class _Waiter:
-    loop: asyncio.AbstractEventLoop
-    future: asyncio.Future[None]
-    cancelled: bool = False
-    granted: bool = False
-    released: bool = False
-
-
-class SessionPermit:
-    def __init__(self, quota: AccountRequestQuota, account_key: Hashable) -> None:
-        self._quota = quota
-        self._account_key = account_key
-        self._released = False
-
-    def release(self) -> None:
-        if not self._released:
-            self._released = True
-            self._quota._release_session(self._account_key)
 
 
 class AccountRequestQuota:
@@ -55,23 +19,38 @@ class AccountRequestQuota:
     def __init__(
         self,
         *,
-        max_concurrent: int = 2,
-        requests_per_minute: int = 120,
-        refill_per_second: float = 2.0,
+        max_concurrent: int = DEFAULT_CAPACITY.account_sessions,
+        task_bucket_capacity: int | None = None,
+        requests_per_minute: int | None = None,
+        refill_per_second: float = DEFAULT_CAPACITY.task_refill_per_second,
         clock=monotonic,
     ) -> None:
-        if max_concurrent < 1 or requests_per_minute < 1 or refill_per_second <= 0:
+        if task_bucket_capacity is not None and requests_per_minute is not None:
+            raise ValueError("use task_bucket_capacity or legacy requests_per_minute, not both")
+        capacity = task_bucket_capacity if task_bucket_capacity is not None else requests_per_minute
+        capacity = DEFAULT_CAPACITY.task_bucket_capacity if capacity is None else capacity
+        if max_concurrent < 1 or capacity < 1 or refill_per_second <= 0:
             raise ValueError("request quota values must be positive")
         self._max_concurrent = max_concurrent
-        self._capacity = requests_per_minute
+        self._capacity = capacity
         self._refill_per_second = refill_per_second
         self._clock = clock
         self._lock = threading.Lock()
         self._buckets: dict[Hashable, tuple[float, float]] = {}
-        self._active: dict[Hashable, int] = defaultdict(int)
-        self._waiters: dict[Hashable, deque[_Waiter]] = defaultdict(deque)
-        self._queued = 0
         self._rejections: dict[str, int] = defaultdict(int)
+        self._scheduler = WorkScheduler(workers=DEFAULT_CAPACITY.imap_workers,
+                                        account_sessions=max_concurrent,
+                                        waiting=DEFAULT_CAPACITY.waiting_imap_work,
+                                        account_waiting=DEFAULT_CAPACITY.waiting_account_work)
+
+    def configure_scheduler(self, *, workers: int, waiting: int, account_waiting: int) -> None:
+        # A grant reserves one bounded executor position for the whole client
+        # lifecycle (including interleaved batches). Workers remain independently
+        # bounded by the physical executor. Account-blocked waiters and reserved
+        # executor positions share one total admission budget.
+        self._scheduler = WorkScheduler(workers=workers + waiting, account_sessions=self._max_concurrent,
+                                        waiting=waiting, account_waiting=account_waiting,
+                                        total_capacity=workers + waiting)
 
     def admit_task(self, account_keys: tuple[Hashable, ...]) -> None:
         """Atomically consume one task token from every distinct account."""
@@ -102,88 +81,11 @@ class AccountRequestQuota:
                 self._buckets[key] = (tokens - 1.0, now)
 
     async def acquire_session(self, account_key: Hashable, deadline: float) -> SessionPermit:
-        loop = asyncio.get_running_loop()
-        waiter: _Waiter | None = None
-        with self._lock:
-            queue = self._waiters[account_key]
-            if self._active[account_key] < self._max_concurrent and not queue:
-                self._active[account_key] += 1
-                return SessionPermit(self, account_key)
-            waiter = _Waiter(loop, loop.create_future())
-            queue.append(waiter)
-            self._queued += 1
+        """Compatibility adapter; execution scheduling lives in scheduler.py."""
+        return await self._scheduler.acquire(account_key, deadline)
 
-        remaining = deadline - monotonic()
-        try:
-            if remaining <= 0:
-                raise TimeoutError
-            await asyncio.wait_for(asyncio.shield(waiter.future), remaining)
-            return SessionPermit(self, account_key)
-        except asyncio.CancelledError:
-            self._cancel_waiter(account_key, waiter, count_timeout=False)
-            raise
-        except TimeoutError:
-            self._cancel_waiter(account_key, waiter, count_timeout=True)
-            raise RequestQuotaError(
-                "account session queue deadline expired",
-                code="timeout",
-                reason="session_queue_timeout",
-            ) from None
-
-    def _cancel_waiter(
-        self, account_key: Hashable, waiter: _Waiter, *, count_timeout: bool
-    ) -> None:
-        release_grant = False
-        with self._lock:
-            waiter.cancelled = True
-            if waiter.granted:
-                if not waiter.released:
-                    waiter.released = True
-                    release_grant = True
-            else:
-                try:
-                    self._waiters[account_key].remove(waiter)
-                except ValueError:
-                    pass
-                else:
-                    self._queued -= 1
-            if count_timeout:
-                self._rejections["session_queue_timeout"] += 1
-        waiter.future.cancel()
-        if release_grant:
-            self._release_session(account_key)
-
-    def _deliver(self, account_key: Hashable, waiter: _Waiter) -> None:
-        release_grant = False
-        with self._lock:
-            if waiter.released:
-                return
-            if waiter.cancelled or waiter.future.cancelled():
-                waiter.released = True
-                release_grant = True
-        if release_grant:
-            self._release_session(account_key)
-        elif not waiter.future.done():
-            waiter.future.set_result(None)
-
-    def _release_session(self, account_key: Hashable) -> None:
-        selected: _Waiter | None = None
-        with self._lock:
-            if self._active[account_key] <= 0:
-                raise RuntimeError("session permit released without an active session")
-            self._active[account_key] -= 1
-            queue = self._waiters[account_key]
-            while queue:
-                candidate = queue.popleft()
-                self._queued -= 1
-                if candidate.cancelled:
-                    continue
-                candidate.granted = True
-                self._active[account_key] += 1
-                selected = candidate
-                break
-        if selected is not None:
-            selected.loop.call_soon_threadsafe(self._deliver, account_key, selected)
+    def close(self) -> None:
+        self._scheduler.close()
 
     def record_rejection(self, reason: str) -> None:
         with self._lock:
@@ -197,16 +99,12 @@ class AccountRequestQuota:
         }
 
     def usage(self) -> dict[str, object]:
+        usage = self._scheduler.usage()
         with self._lock:
-            return {
-                "active_sessions": sum(self._active.values()),
-                "queued_session_requests": self._queued,
-                "rejections": {
-                    reason: self._rejections.get(reason, 0)
-                    for reason in (
-                        "task_rate",
-                        "session_queue_timeout",
-                        "imap_worker_capacity",
-                    )
-                },
-            }
+            recorded = dict(self._rejections)
+        scheduler_rejections = usage["rejections"]
+        usage["rejections"] = {
+            reason: recorded.get(reason, 0) + scheduler_rejections.get(reason, 0)
+            for reason in ("task_rate", "session_queue_timeout", "imap_worker_capacity", "account_queue_capacity")
+        }
+        return usage

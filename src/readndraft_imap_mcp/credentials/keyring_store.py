@@ -16,7 +16,11 @@ class KeyringCredentialStore:
         await asyncio.to_thread(save_secret, account_id, secret)
 
     async def load_secret(self, account_id: str) -> str:
-        secret = await asyncio.to_thread(load_secret, account_id)
+        return await asyncio.to_thread(self.load_secret_sync, account_id)
+
+    def load_secret_sync(self, account_id: str) -> str:
+        """Run directly inside the broker-owned bounded credential executor."""
+        secret = load_secret(account_id)
         if secret is None:
             raise KeyError("no credential stored for account_id")
         return secret

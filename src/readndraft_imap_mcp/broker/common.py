@@ -49,7 +49,7 @@ def batch_error(
         return SafeError(
             exc.code,  # type: ignore[arg-type]
             "account task rate limit exceeded" if exc.reason == "task_rate" else "request capacity exceeded",
-            "account" if exc.reason in {"task_rate", "session_queue_timeout"} else "broker",
+            "account" if exc.reason in {"task_rate", "session_queue_timeout", "account_queue_capacity"} else "broker",
             exc.reason,  # type: ignore[arg-type]
             exc.retry_after_seconds,
         )

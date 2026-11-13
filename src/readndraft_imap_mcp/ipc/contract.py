@@ -135,6 +135,7 @@ SCHEMA_DEFINITIONS = {
                     "type": "string",
                     "enum": [
                         "task_rate", "session_queue_timeout", "imap_worker_capacity",
+                        "account_queue_capacity", "credential_capacity", "ipc_connection_capacity",
                         "ipc_helper_capacity", "request_deadline", "transport_loss",
                     ],
                 }
@@ -289,17 +290,40 @@ RESPONSE_SCHEMAS = {
                     "account_sessions": INTEGER,
                     "imap_workers": INTEGER,
                     "waiting_imap_work": INTEGER,
+                    "waiting_account_work": INTEGER,
+                    "credential_workers": INTEGER,
+                    "waiting_credential_work": INTEGER,
+                    "ipc_connections": INTEGER,
+                    "ipc_rpc": INTEGER,
+                    "ipc_leases": INTEGER,
+                    "ipc_control": INTEGER,
+                    "ipc_handshake_seconds": {"type": "number"},
+                    "ipc_frame_seconds": {"type": "number"},
                 }
             ),
             "resource_usage": O(
                 {
                     "active_sessions": INTEGER,
                     "queued_session_requests": INTEGER,
+                    "scheduler_running": INTEGER,
+                    "scheduler_waiting": INTEGER,
+                    "credential_running": INTEGER,
+                    "credential_queued": INTEGER,
+                    "ipc_connections": INTEGER,
+                    "ipc_rpc": INTEGER,
+                    "ipc_leases": INTEGER,
+                    "ipc_control": INTEGER,
+                    "ipc_rejections": O({
+                        "connection": INTEGER, "rpc": INTEGER, "leases": INTEGER,
+                        "control": INTEGER, "handshake_timeout": INTEGER, "frame_timeout": INTEGER,
+                    }),
                     "rejections": O(
                         {
                             "task_rate": INTEGER,
                             "session_queue_timeout": INTEGER,
                             "imap_worker_capacity": INTEGER,
+                            "account_queue_capacity": INTEGER,
+                            "credential_capacity": INTEGER,
                         }
                     ),
                 }
