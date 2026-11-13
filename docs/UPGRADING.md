@@ -10,18 +10,33 @@ required migration steps and integration contract changes.
 
 ## Choose your upgrade path
 
-| Installed version | Steps when upgrading to 0.12.2 |
+| Installed version | Steps when upgrading to 0.13.0 |
 | --- | --- |
-| 0.3.x or earlier | Complete the legacy plugin migration below, then review the 0.9.0, 0.10.0, and 0.11.0 guides. |
-| 0.4.x through 0.8.x | Review the 0.9.0, 0.10.0, and 0.11.0 guides. |
-| 0.9.x | Review the 0.10.0 and 0.11.0 guides. |
+| 0.3.x or earlier | Complete the legacy plugin migration below, then review the 0.9.0, 0.10.0, and 0.11.0 guides and the update notes below. |
+| 0.4.x through 0.8.x | Review the 0.9.0, 0.10.0, and 0.11.0 guides and the update notes below. |
+| 0.9.x | Review the 0.10.0 and 0.11.0 guides and the update notes below. |
 | 0.10.x | Review the 0.11.0 guide and the update notes below. |
-| 0.11.x through 0.12.1 | Review the update notes below. |
+| 0.11.x through 0.12.2 | Review the update notes below. |
 
 ## Updates after 0.11.0
 
-Versions 0.11.x and 0.12.x require no integration contract migration when
-upgrading to 0.12.2. Review these release-specific update notes:
+### Upgrading to 0.13.0
+
+Version 0.13.0 upgrades the authenticated local broker protocol from IPC 12 to
+IPC 13. Existing MCP tool calls, account configuration, and OS keyring
+credentials can be reused.
+
+1. Fully close clients using the old version so their frontend leases end. If
+   you run a standalone broker, stop it using the old runtime before updating.
+2. Update the marketplace plugin or your manually pinned runtime to 0.13.0.
+   Standalone broker installations must update both the broker and frontend to
+   0.13.0 before restarting them.
+3. Restart the client and run `uvx readndraft-imap-mcp@0.13.0 doctor` to verify
+   broker compatibility.
+
+See [broker capacity and IPC migration](BROKER_CAPACITY.md) for the new
+limits, health fields, and error reasons, and the [Linux installation
+guide](INSTALL_LINUX.md) for the long Unix socket path fallback.
 
 ### Upgrading to 0.12.2
 
@@ -71,8 +86,8 @@ for the client you previously configured. Run only the applicable command, or
 both if you previously configured both clients:
 
 ```console
-uvx readndraft-imap-mcp@0.12.2 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.12.2 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.13.0 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.13.0 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been
