@@ -8,6 +8,8 @@ from typing import Literal, TypeAlias
 from readndraft_imap_mcp import __version__
 from readndraft_imap_mcp.protocol_version import IPC_PROTOCOL_VERSION
 
+from .settings import CapacitySettings
+
 
 class ProtocolError(ValueError):
     """Raised when an internal broker request is outside the typed allowlist."""
@@ -18,13 +20,7 @@ class HealthRequest:
     operation: Literal["health"] = "health"
 
 
-@dataclass(frozen=True, slots=True)
-class ResourceLimits:
-    task_bucket_capacity: int = 120
-    task_refill_per_second: float = 2.0
-    account_sessions: int = 2
-    imap_workers: int = 8
-    waiting_imap_work: int = 16
+ResourceLimits = CapacitySettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,12 +28,33 @@ class ResourceRejections:
     task_rate: int = 0
     session_queue_timeout: int = 0
     imap_worker_capacity: int = 0
+    account_queue_capacity: int = 0
+    credential_capacity: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class IpcRejections:
+    connection: int = 0
+    rpc: int = 0
+    leases: int = 0
+    control: int = 0
+    handshake_timeout: int = 0
+    frame_timeout: int = 0
 
 
 @dataclass(frozen=True, slots=True)
 class ResourceUsage:
     active_sessions: int = 0
     queued_session_requests: int = 0
+    scheduler_running: int = 0
+    scheduler_waiting: int = 0
+    credential_running: int = 0
+    credential_queued: int = 0
+    ipc_connections: int = 0
+    ipc_rpc: int = 0
+    ipc_leases: int = 0
+    ipc_control: int = 0
+    ipc_rejections: IpcRejections = IpcRejections()
     rejections: ResourceRejections = ResourceRejections()
 
 

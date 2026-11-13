@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import time
+from dataclasses import asdict
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +10,7 @@ import pytest
 from readndraft_imap_mcp.broker.accounts import AccountConfig, AccountRegistry
 from readndraft_imap_mcp.broker.limits import AccountRequestQuota, RequestQuotaError
 from readndraft_imap_mcp.broker.service import BrokerService
+from readndraft_imap_mcp.broker.settings import DEFAULT_CAPACITY
 from readndraft_imap_mcp.imap.models import DraftCreationResult, MessageIdentity
 
 
@@ -222,18 +223,28 @@ def test_invalid_reply_draft_is_rejected_before_threading_admission() -> None:
 
 def test_timed_out_worker_holds_session_permit_until_it_really_finishes() -> None:
     quota = AccountRequestQuota(max_concurrent=1)
+    entered = threading.Event()
+    release = threading.Event()
     broker = BrokerService(
         _registry(AccountConfig("mail", "imap.example.com", 993, "same@example.com")),
         Credentials(),
         Client,
         quota=quota,
-        request_timeout_seconds=0.02,
+        request_timeout_seconds=1,
     )
 
-    with pytest.raises(TimeoutError):
-        asyncio.run(broker._client_call("mail", lambda client: time.sleep(0.1)))
-    assert quota.usage()["active_sessions"] == 1
-    time.sleep(0.12)
+    def block(client):
+        entered.set()
+        assert release.wait(5)
+
+    try:
+        with pytest.raises(TimeoutError):
+            asyncio.run(broker._client_call("mail", block))
+        assert entered.is_set()
+        assert quota.usage()["active_sessions"] == 1
+    finally:
+        release.set()
+        broker.close()
     assert quota.usage()["active_sessions"] == 0
 
 
@@ -258,28 +269,32 @@ def test_worker_exception_releases_session_and_global_capacity() -> None:
 
 
 def test_write_batch_preserves_success_and_marks_only_uncertain_item_unknown() -> None:
+    called: list[int] = []
     broker = BrokerService(
         _registry(AccountConfig("mail", "imap.example.com", 993, "same@example.com")),
         Credentials(),
         Client,
-        request_timeout_seconds=0.01,
     )
 
     def write(client, item):
+        called.append(item)
         if item == 2:
-            time.sleep(0.02)
             raise TimeoutError("private deadline detail")
         return item
 
-    outcomes = asyncio.run(
-        broker._batch_client_call(
-            "mail",
-            (1, 2, 3),
-            write,
-            max_items=3,
-            write=True,
+    try:
+        outcomes = asyncio.run(
+            broker._batch_client_call(
+                "mail",
+                (1, 2, 3),
+                write,
+                max_items=3,
+                write=True,
+            )
         )
-    )
+    finally:
+        broker.close()
+    assert called == [1, 2]
     assert outcomes[0].value == 1
     assert outcomes[1].error is not None and outcomes[1].error.code == "outcome_unknown"
     assert outcomes[2].error is not None and outcomes[2].error.code == "timeout"
@@ -294,13 +309,7 @@ def test_resource_snapshot_is_aggregate_and_contains_no_account_key_material() -
     asyncio.run(broker._client_call("private-alias", lambda client: None))
 
     snapshot = broker.resource_snapshot()
-    assert snapshot["resource_limits"] == {
-        "task_bucket_capacity": 120,
-        "task_refill_per_second": 2.0,
-        "account_sessions": 2,
-        "imap_workers": 8,
-        "waiting_imap_work": 16,
-    }
+    assert snapshot["resource_limits"] == asdict(DEFAULT_CAPACITY)
     encoded = repr(snapshot)
     assert "private-alias" not in encoded
     assert "secret.example.com" not in encoded
@@ -317,9 +326,67 @@ def test_resource_snapshot_reports_injected_quota_limits() -> None:
     )
 
     assert broker.resource_snapshot()["resource_limits"] == {
+        **asdict(DEFAULT_CAPACITY),
         "task_bucket_capacity": 7,
         "task_refill_per_second": 0.5,
         "account_sessions": 1,
         "imap_workers": 8,
         "waiting_imap_work": 16,
     }
+
+
+def test_default_hot_account_burst_preserves_an_idle_accounts_physical_progress():
+    entered = threading.Event()
+    release = threading.Event()
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+    credentials = Credentials()
+    broker = BrokerService(
+        _registry(AccountConfig("a", "a.invalid", 993, "a"), AccountConfig("b", "b.invalid", 993, "b")),
+        credentials, Client,
+    )
+
+    def block(client):
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+            if active == 2:
+                entered.set()
+        try:
+            assert release.wait(5)
+        finally:
+            with lock:
+                active -= 1
+
+    async def scenario():
+        running = [asyncio.create_task(broker._client_call("a", block)) for _ in range(2)]
+        assert await asyncio.to_thread(entered.wait, 5)
+        burst = [asyncio.create_task(broker._client_call("a", lambda client: None)) for _ in range(22)]
+        await asyncio.sleep(0)
+        try:
+            assert broker.resource_snapshot()["resource_usage"]["scheduler_waiting"] == 4
+            assert await broker._client_call("b", lambda client: "progress") == "progress"
+            rejected = [task for task in burst if task.done()]
+            assert len(rejected) == 18
+            for task in rejected:
+                with pytest.raises(RequestQuotaError) as error:
+                    await task
+                assert error.value.reason == "account_queue_capacity"
+            for task in burst:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*burst, return_exceptions=True)
+            assert credentials.loads == 3  # Two hot sessions and one idle session.
+        finally:
+            release.set()
+            await asyncio.gather(*running)
+        assert broker.resource_snapshot()["resource_usage"]["active_sessions"] == 0
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        release.set()
+        broker.close()
+    assert peak == 2

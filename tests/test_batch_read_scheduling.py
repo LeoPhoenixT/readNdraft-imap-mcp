@@ -94,18 +94,26 @@ def test_interleaved_accounts_progress_with_one_worker_and_reuse_sessions(delay)
     assert_released(broker)
 
 
-def test_deadline_preserves_completed_read_and_releases_waiting_accounts():
+def test_deadline_preserves_completed_read_and_retains_unfinished_credentials():
+    release = threading.Event()
+
     class SlowCredentials(Credentials):
         async def load_secret(self, account_id):
             if account_id == "b":
-                await asyncio.sleep(1)
+                await asyncio.to_thread(release.wait, 5)
             return await super().load_secret(account_id)
 
     broker = broker_for(credentials=SlowCredentials(), request_timeout_seconds=0.15)
-    results = asyncio.run(broker.get_emails(identities("a", "b", "a")))
-    assert [item.ok for item in results] == [True, False, False]
-    assert results[0].message.text == "1"
-    assert [item.error.code for item in results[1:]] == ["timeout", "timeout"]
+    try:
+        results = asyncio.run(broker.get_emails(identities("a", "b", "a")))
+        assert [item.ok for item in results] == [True, False, False]
+        assert results[0].message.text == "1"
+        assert [item.error.code for item in results[1:]] == ["timeout", "timeout"]
+        assert broker.resource_snapshot()["resource_usage"]["active_sessions"] == 1
+        assert broker.resource_snapshot()["resource_usage"]["credential_running"] == 1
+    finally:
+        release.set()
+        broker.close()
     assert broker.resource_snapshot()["resource_usage"]["active_sessions"] == 0
 
 

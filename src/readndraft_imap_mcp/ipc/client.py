@@ -174,11 +174,8 @@ class IpcBrokerClient:
                 if cancelled.is_set() or remaining <= 0 or not connection.poll(remaining):
                     raise TimeoutError("broker frontend lease deadline expired")
                 response = json.loads(connection.recv_bytes(MAX_FRAME_BYTES).decode("utf-8"))
-                if (
-                    response.get("request_id") != request["request_id"]
-                    or response.get("ok") is not True
-                    or response.get("result") != {"leased": True}
-                ):
+                _validate_response(response, request["request_id"])
+                if response.get("result") != {"leased": True}:
                     raise RpcError("broker frontend lease failed")
                 if cancelled.is_set():
                     raise TimeoutError("broker frontend lease deadline expired")
@@ -209,16 +206,7 @@ class IpcBrokerClient:
             if not connection.poll(RPC_RESPONSE_TIMEOUT_SECONDS):
                 raise TimeoutError("broker response deadline expired")
             response = json.loads(connection.recv_bytes(MAX_FRAME_BYTES).decode("utf-8"))
-        if response.get("request_id") != request["request_id"]:
-            if response.get("ok") is False and response.get("request_id") is None:
-                # Broker rejected the frame before it could echo the id; the
-                # real error is more useful than a correlation complaint.
-                error = response.get("error", {})
-                raise RpcError.from_safe_error(_safe_error_from_json(error))
-            raise RpcError("broker response request_id mismatch")
-        if response.get("ok") is not True:
-            error = response.get("error", {})
-            raise RpcError.from_safe_error(_safe_error_from_json(error))
+        _validate_response(response, request["request_id"])
         return response["result"]
 
     async def _request(self, operation: str, params: dict[str, Any]) -> Any:
@@ -444,6 +432,16 @@ class IpcBrokerClient:
             },
         )
         return tuple(_batch_move_result(item) for item in items)
+
+
+def _validate_response(response: dict[str, Any], request_id: str) -> None:
+    response_id = response.get("request_id")
+    ok = response.get("ok")
+    # A frame rejected before validation may not have an ID to echo.
+    if response_id != request_id and not (response_id is None and ok is False):
+        raise RpcError("broker response request_id mismatch")
+    if ok is not True:
+        raise RpcError.from_safe_error(_safe_error_from_json(response.get("error", {})))
 
 
 def _json_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:

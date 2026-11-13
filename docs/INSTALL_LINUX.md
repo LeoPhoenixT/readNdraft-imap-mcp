@@ -28,7 +28,7 @@ fails closed in that situation and does not store a plaintext fallback.
 ## Guided setup
 
 ```console
-uvx readndraft-imap-mcp@0.9.0 setup
+uvx readndraft-imap-mcp@latest setup
 ```
 
 The wizard verifies the credential backend, reads the IMAP password through a
@@ -63,6 +63,12 @@ mailboxes, then perform a harmless one-result search and plain-text read.
   `uvx readndraft-imap-mcp@latest account rotate-secret ALIAS`.
 - The first client start can be slower while uv downloads the pinned package;
   generated configurations allow 30 seconds for startup.
+- If the runtime path exceeds the Unix socket path limit, readNdraft places only
+  the socket in a private `/tmp/readndraft-<uid>-<runtime-hash>/` directory.
+  The name isolates users and runtime directories; account data, credentials,
+  and broker locks keep their usual locations. An existing socket directory
+  must belong to the current user, must not be a symbolic link, and must have
+  no group or other permissions.
 
 The on-demand launcher is the recommended MCP path. An always-on systemd user
 service is an advanced deployment and still requires a usable per-user Secret

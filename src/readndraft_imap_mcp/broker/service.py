@@ -32,6 +32,7 @@ from .drafts import reply_thread
 from .execution import BrokerExecutionContext as BrokerExecutionContext
 from .limits import AccountRequestQuota
 from .mutations import mutation_spec
+from .settings import DEFAULT_CAPACITY, CapacitySettings
 
 T = TypeVar("T")
 Item = TypeVar("Item")
@@ -55,8 +56,9 @@ class BrokerService:
         quota: AccountRequestQuota | None = None,
         request_timeout_seconds: float = 30,
         accounts_loader: Callable[[], AccountRegistry] | None = None,
-        max_imap_workers: int = 8,
-        max_waiting_imap_work: int = 16,
+        max_imap_workers: int | None = None,
+        max_waiting_imap_work: int | None = None,
+        capacity_settings: CapacitySettings = DEFAULT_CAPACITY,
     ) -> None:
         from .services import DraftService, MutationService, ReadService, SearchService
 
@@ -69,11 +71,15 @@ class BrokerService:
             accounts_loader=accounts_loader,
             max_imap_workers=max_imap_workers,
             max_waiting_imap_work=max_waiting_imap_work,
+            capacity_settings=capacity_settings,
         )
         self._search = SearchService(self._execution)
         self._read = ReadService(self._execution, attachments)
         self._drafts = DraftService(self._execution, audit, drafts, attachments)
         self._mutations = MutationService(self._execution, audit)
+
+    def close(self, *, wait: bool = True) -> None:
+        self._execution.close(wait=wait)
 
     def handle(self, payload: object) -> dict[str, object]:
         return self._execution.handle(payload)

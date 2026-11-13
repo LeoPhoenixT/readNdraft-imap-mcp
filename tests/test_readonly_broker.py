@@ -155,18 +155,27 @@ def test_expired_batch_does_not_start_the_next_imap_command() -> None:
     called: list[str] = []
     broker = BrokerService(
         AccountRegistry([AccountConfig("personal", "pinned.example.com", 993, "leo@example.com")]),
-        FakeCredentialStore(), FakeClient, request_timeout_seconds=0.02,
+        FakeCredentialStore(), FakeClient,
     )
 
-    def operation(client, value):
-        called.append(value)
-        if value == "first":
-            time.sleep(0.06)
-        return value
+    async def run_batch():
+        async def batch():
+            context = broker._execution._context()
 
-    outcomes = asyncio.run(
-        broker._batch_client_call("personal", ("first", "second"), operation, max_items=2)
-    )
+            def operation(client, value):
+                called.append(value)
+                if value == "first":
+                    context.deadline = time.monotonic() - 1
+                return value
+
+            return await broker._batch_client_call("personal", ("first", "second"), operation, max_items=2)
+
+        return await broker._execution._with_request_context(batch, account_ids=("personal",))
+
+    try:
+        outcomes = asyncio.run(run_batch())
+    finally:
+        broker.close()
     assert called == ["first"]
     assert outcomes[0].value == "first"
     assert outcomes[1].error is not None and outcomes[1].error.code == "timeout"

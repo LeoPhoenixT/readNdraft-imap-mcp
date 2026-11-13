@@ -17,8 +17,10 @@ from readndraft_imap_mcp.imap.client import ImapClient
 
 from .accounts import AccountConfig, AccountRegistry
 from .common import BatchItemOutcome, batch_error
+from .credential_work import CredentialWorkPool
 from .limits import AccountRequestQuota, PhysicalAccountKey, RequestQuotaError, SessionPermit
-from .protocol import HealthResponse, decode_request
+from .protocol import HealthResponse, ResourceUsage, decode_request
+from .settings import DEFAULT_CAPACITY, CapacitySettings
 
 T = TypeVar("T")
 Item = TypeVar("Item")
@@ -62,7 +64,7 @@ class _ClientWork:
     def __init__(
         self, context: _RequestContext, account: AccountConfig, secret: str,
         factory: Callable[[AccountConfig, str], ImapClient], executor: ThreadPoolExecutor,
-        permit: SessionPermit, capacity: threading.BoundedSemaphore,
+        permit: SessionPermit,
     ) -> None:
         self._context = context
         self._account = account
@@ -70,7 +72,6 @@ class _ClientWork:
         self._factory = factory
         self._executor = executor
         self._permit = permit
-        self._capacity = capacity
         self._stack = ExitStack()
         self._pending: Future | None = None
         self._closing: Future[None] | None = None
@@ -109,7 +110,6 @@ class _ClientWork:
             finally:
                 self._secret = ""
                 self._permit.release()
-                self._capacity.release()
             if failure is not None:
                 closing.set_exception(failure)
             else:
@@ -161,21 +161,34 @@ class BrokerExecutionContext:
         quota: AccountRequestQuota | None = None,
         request_timeout_seconds: float = 30,
         accounts_loader: Callable[[], AccountRegistry] | None = None,
-        max_imap_workers: int = 8,
-        max_waiting_imap_work: int = 16,
+        max_imap_workers: int | None = None,
+        max_waiting_imap_work: int | None = None,
+        capacity_settings: CapacitySettings = DEFAULT_CAPACITY,
     ) -> None:
         self._accounts = accounts or AccountRegistry(())
         self._accounts_loader = accounts_loader
         self._credentials = credentials
         self._client_factory = client_factory
-        self._quota = quota or AccountRequestQuota()
+        self._settings = capacity_settings
+        self._quota = quota or AccountRequestQuota(
+            max_concurrent=capacity_settings.account_sessions,
+            task_bucket_capacity=capacity_settings.task_bucket_capacity,
+            refill_per_second=capacity_settings.task_refill_per_second,
+        )
         if request_timeout_seconds <= 0:
             raise ValueError("request timeout must be positive")
         self._request_timeout_seconds = request_timeout_seconds
+        max_imap_workers = capacity_settings.imap_workers if max_imap_workers is None else max_imap_workers
+        max_waiting_imap_work = (capacity_settings.waiting_imap_work
+                                 if max_waiting_imap_work is None else max_waiting_imap_work)
         if max_imap_workers < 1 or max_waiting_imap_work < 0:
             raise ValueError("IMAP worker limits must be valid")
         self._executor = ThreadPoolExecutor(max_workers=max_imap_workers, thread_name_prefix="readndraft-imap")
-        self._work_capacity = threading.BoundedSemaphore(max_imap_workers + max_waiting_imap_work)
+        self._quota.configure_scheduler(workers=max_imap_workers, waiting=max_waiting_imap_work,
+                                        account_waiting=capacity_settings.waiting_account_work)
+        self._credential_pool = CredentialWorkPool(capacity_settings.credential_workers,
+                                                   capacity_settings.waiting_credential_work)
+        self._closed = False
         self._max_imap_workers = max_imap_workers
         self._max_waiting_imap_work = max_waiting_imap_work
 
@@ -244,38 +257,54 @@ class BrokerExecutionContext:
                 raise context.admission_error
             return context.accounts[account_id]
 
-    async def _credential(self, account_id: str) -> str:
+    async def _credential(self, account_id: str, permit: SessionPermit) -> str:
         context = self._context()
-        context.check()
-        if self._credentials is None:
-            raise RuntimeError("credential store is not configured")
-        timeout = asyncio.timeout(context.remaining())
+        submitted: Future[str] | None = None
         try:
-            async with timeout:
-                return await self._credentials.load_secret(account_id)
-        except TimeoutError:
-            if timeout.expired():
-                context.cancelled.set()
+            context.check()
+            if self._credentials is None:
+                raise RuntimeError("credential store is not configured")
+            store = self._credentials
+
+            def load() -> str:
+                synchronous = getattr(store, "load_secret_sync", None)
+                if synchronous is not None:
+                    return synchronous(account_id)
+                # Legacy asynchronous adapters run on an owned worker loop.
+                # asyncio.run also drains any to_thread work before returning.
+                return asyncio.run(store.load_secret(account_id))
+
+            def check() -> None:
+                context.check()
+                if self._closed:
+                    raise RuntimeError("broker execution context is closed")
+
+            submitted = self._credential_pool.submit(check, load)
+            timeout = asyncio.timeout(context.remaining())
+            try:
+                async with timeout:
+                    return await asyncio.shield(_worker_future(submitted))
+            except TimeoutError:
+                if timeout.expired():
+                    context.cancelled.set()
+                raise
+        except BaseException:
+            # A timed-out/cancelled caller cannot release physical ownership.
+            # Worker callbacks are independent of the caller's event loop.
+            if submitted is None:
+                permit.release()
+            else:
+                submitted.add_done_callback(lambda finished: permit.release())
             raise
 
     async def _acquire_client_work(self, context: _RequestContext, account_id: str) -> _ClientWork:
         context.check()
+        if self._closed:
+            raise RuntimeError("broker execution context is closed")
         account = self._ensure_task_admitted(context, account_id)
-        if not self._work_capacity.acquire(blocking=False):
-            self._quota.record_rejection("imap_worker_capacity")
-            raise RequestQuotaError("broker IMAP worker capacity exceeded", reason="imap_worker_capacity")
-        try:
-            permit = await self._quota.acquire_session(self._physical_account_key(account), context.deadline)
-        except BaseException:
-            self._work_capacity.release()
-            raise
-        try:
-            secret = await self._credential(account_id)
-        except BaseException:
-            permit.release()
-            self._work_capacity.release()
-            raise
-        return _ClientWork(context, account, secret, self._client_factory, self._executor, permit, self._work_capacity)
+        permit = await self._quota.acquire_session(self._physical_account_key(account), context.deadline)
+        secret = await self._credential(account_id, permit)
+        return _ClientWork(context, account, secret, self._client_factory, self._executor, permit)
 
     async def _client_call(
         self, account_id: str, operation: Callable[[ImapClient], T], *, response_timeout: bool = True,
@@ -360,12 +389,28 @@ class BrokerExecutionContext:
         finally:
             await asyncio.shield(_worker_future(work.close()))
 
+    def close(self, *, wait: bool = True) -> None:
+        """Reject new work, expire waiters and drain owned physical work."""
+        self._closed = True
+        self._quota.close()
+        self._credential_pool.close(wait=wait)
+        # Client cleanup falls back to the finishing worker after shutdown.
+        self._executor.shutdown(wait=wait)
+
     def resource_snapshot(self) -> dict[str, object]:
+        from dataclasses import asdict
+
+        usage = {**asdict(ResourceUsage()), **self._quota.usage()}
+        credential = self._credential_pool.usage()
+        usage["credential_running"] = credential["credential_running"]
+        usage["credential_queued"] = credential["credential_queued"]
+        usage["rejections"]["credential_capacity"] = credential["credential_capacity"]
         return {
             "resource_limits": {
+                **asdict(self._settings),
                 **self._quota.limits(),
                 "imap_workers": self._max_imap_workers,
                 "waiting_imap_work": self._max_waiting_imap_work,
             },
-            "resource_usage": self._quota.usage(),
+            "resource_usage": usage,
         }
