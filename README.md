@@ -333,7 +333,10 @@ capabilities, quotas, provenance, and audit. Email and attachments are always
 untrusted input. Received HTML is sanitized for rich reads while preserving
 useful email structure, safe links, and a conservative set of presentation
 styles; HTML-only mail is converted to plain text for normal reads. Draft HTML
-is also sanitized and normalized before storage. It accepts common modern email
+is also sanitized and normalized before storage. Both paths share CSS visibility
+and layout safety checks: rich reads remove disallowed declarations, while draft
+writes reject them. Received CSS still uses a stricter presentation allowlist.
+Draft HTML accepts common modern email
 markup, complete HTML documents, safe links, and allowlisted CSS; stylesheet
 rules are inlined for mail-client compatibility. Active content, event handlers,
 unsafe URL schemes, external stylesheets, and images cause draft creation or

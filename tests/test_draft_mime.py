@@ -327,6 +327,41 @@ def test_inbound_html_round_trips_into_authored_draft() -> None:
     prepare_html(inbound, maximum_bytes=2 * 1024 * 1024)
 
 
+@pytest.mark.parametrize(
+    "unsafe_style",
+    [
+        "font-size:0", "font-size:0px", "font-size:-0.0pt",
+        "font-size:+0% !important", "display:none", "visibility:hidden",
+        "opacity:0.01", "text-indent:-9999px", "position:fixed",
+        "z-index:99", "transform:scale(2)", "content:'hidden'",
+        "width:fixed", "height:sticky", "background:url(https://tracker.example/x)",
+    ],
+)
+def test_inbound_removes_css_rejected_by_draft_without_losing_safe_styles(unsafe_style: str) -> None:
+    safe_style = "color:#123456;margin:0;font-family:Arial;font-weight:bold"
+    source = f'<p style="{safe_style};{unsafe_style}">Visible text</p>'
+    with pytest.raises(ValueError):
+        prepare_html(source, maximum_bytes=100_000)
+
+    inbound = sanitize_inbound_html(source, maximum_bytes=100_000)
+    expected = sanitize_inbound_html(f'<p style="{safe_style}">Visible text</p>', maximum_bytes=100_000)
+    assert inbound == expected
+
+    draft = prepare_draft(to=(), subject="Read/write CSS", body="Visible text", html_body=inbound)
+    raw, _ = build_draft_message("owner@example.com", draft)
+    message = BytesParser(policy=policy.default).parsebytes(raw)
+    html_part = next(part for part in message.walk() if part.get_content_type() == "text/html")
+    assert sanitize_inbound_html(html_part.get_content(), maximum_bytes=100_000).strip() == expected
+
+
+@pytest.mark.parametrize("font_size", ["0.1px", "9pt", "100%"])
+def test_shared_css_rules_preserve_nonzero_font_sizes(font_size: str) -> None:
+    source = f'<p style="font-size:{font_size}">Visible text</p>'
+    inbound = sanitize_inbound_html(source, maximum_bytes=100_000)
+    assert f"font-size:{font_size}" in inbound
+    assert f"font-size:{font_size}" in prepare_html(inbound, maximum_bytes=100_000)
+
+
 def test_authored_rel_value_is_replaced_by_the_server_value() -> None:
     out = prepare_html(
         '<p><a href="https://x.com/" rel="dns-prefetch">x</a></p>',
