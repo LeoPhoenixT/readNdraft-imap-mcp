@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.13.1
+
+### Fixed
+
+- Preserve relevant safe formatting when drafting from selected existing emails
+  and when replacing rich drafts through the packaged email skill.
+- Apply common CSS visibility and layout checks to rich reads and draft writes.
+  Rich reads discard disallowed declarations while retaining supported styles.
+
 ## 0.13.0
 
 ### Changed

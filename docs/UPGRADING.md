@@ -10,15 +10,24 @@ required migration steps and integration contract changes.
 
 ## Choose your upgrade path
 
-| Installed version | Steps when upgrading to 0.13.0 |
+| Installed version | Steps when upgrading to 0.13.1 |
 | --- | --- |
 | 0.3.x or earlier | Complete the legacy plugin migration below, then review the 0.9.0, 0.10.0, and 0.11.0 guides and the update notes below. |
 | 0.4.x through 0.8.x | Review the 0.9.0, 0.10.0, and 0.11.0 guides and the update notes below. |
 | 0.9.x | Review the 0.10.0 and 0.11.0 guides and the update notes below. |
 | 0.10.x | Review the 0.11.0 guide and the update notes below. |
 | 0.11.x through 0.12.2 | Review the update notes below. |
+| 0.13.0 | Follow the 0.13.1 update notes below. |
 
 ## Updates after 0.11.0
+
+### Upgrading to 0.13.1
+
+Update the marketplace plugin or your manually pinned runtime to 0.13.1, then
+fully close and restart the client. If you run a standalone broker, update the
+broker and frontend together. Run `uvx readndraft-imap-mcp@0.13.1 doctor` to
+verify broker compatibility. The patch retains IPC 13 and the existing MCP tool
+schemas, so integrations on 0.13.0 require no migration.
 
 ### Upgrading to 0.13.0
 
@@ -86,8 +95,8 @@ for the client you previously configured. Run only the applicable command, or
 both if you previously configured both clients:
 
 ```console
-uvx readndraft-imap-mcp@0.13.0 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.13.0 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.13.1 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.13.1 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been
