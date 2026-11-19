@@ -60,7 +60,7 @@ class HtmlPolicy(Enum):
 
 INBOUND_POLICY = HtmlPolicy.INBOUND
 AUTHORED_POLICY = HtmlPolicy.AUTHORED
-_AUTHORED_BLOCKED_PROPERTIES = {
+_BLOCKED_LAYOUT_PROPERTIES = {
     "position", "top", "right", "bottom", "left", "z-index", "transform", "content",
 }
 _ZERO_LENGTH = re.compile(r"^[-+]?0(?:\.0+)?(?:[a-z%]+)?$", re.IGNORECASE)
@@ -203,30 +203,34 @@ def _validate_css_declaration(declaration: object, *, policy: HtmlPolicy) -> Non
             raise ValueError(f"unsupported draft CSS function: {token.lower_name}")
     if policy is INBOUND_POLICY and name == "display" and folded not in _SAFE_DISPLAY_VALUES:
         raise ValueError("unsupported draft CSS display value")
-    if policy is AUTHORED_POLICY:
-        if folded in {"fixed", "sticky"}:
-            raise ValueError(f"authored HTML CSS value is not allowed: {name}")
-        if name in _AUTHORED_BLOCKED_PROPERTIES:
-            raise ValueError(f"authored HTML CSS property is not allowed: {name}")
-        if name == "display" and folded == "none":
-            raise ValueError("authored HTML must not hide content with display")
-        if name == "visibility" and folded == "hidden":
-            raise ValueError("authored HTML must not hide content with visibility")
-        if name == "opacity":
-            try:
-                if float(folded) < 0.1:
-                    raise ValueError("authored HTML opacity must be at least 0.1")
-            except ValueError as exc:
-                if "at least" in str(exc):
-                    raise
-        if name == "font-size" and _ZERO_LENGTH.fullmatch(folded):
-            raise ValueError("authored HTML font-size must not be zero")
-        if name == "text-indent":
-            match = _LARGE_NEGATIVE_LENGTH.fullmatch(folded)
-            if match and float(match.group(1)) <= -100:
-                raise ValueError("authored HTML text-indent is too negative")
-        if name == "float" and folded not in {"left", "right", "none"}:
-            raise ValueError("authored HTML float must be left, right, or none")
+    _validate_presentation_safety(name, folded)
+
+
+def _validate_presentation_safety(name: str, folded: str) -> None:
+    """Apply the same visibility and layout constraints to both HTML policies."""
+    if folded in {"fixed", "sticky"}:
+        raise ValueError(f"HTML CSS value is not allowed: {name}")
+    if name in _BLOCKED_LAYOUT_PROPERTIES:
+        raise ValueError(f"HTML CSS property is not allowed: {name}")
+    if name == "display" and folded == "none":
+        raise ValueError("HTML must not hide content with display")
+    if name == "visibility" and folded == "hidden":
+        raise ValueError("HTML must not hide content with visibility")
+    if name == "opacity":
+        try:
+            if float(folded) < 0.1:
+                raise ValueError("HTML opacity must be at least 0.1")
+        except ValueError as exc:
+            if "at least" in str(exc):
+                raise
+    if name == "font-size" and _ZERO_LENGTH.fullmatch(folded):
+        raise ValueError("HTML font-size must not be zero")
+    if name == "text-indent":
+        match = _LARGE_NEGATIVE_LENGTH.fullmatch(folded)
+        if match and float(match.group(1)) <= -100:
+            raise ValueError("HTML text-indent is too negative")
+    if name == "float" and folded not in {"left", "right", "none"}:
+        raise ValueError("HTML float must be left, right, or none")
 
 
 def _validate_stylesheet(value: str, *, policy: HtmlPolicy) -> None:
