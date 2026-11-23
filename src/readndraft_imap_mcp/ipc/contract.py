@@ -31,6 +31,8 @@ ALLOWED_OPERATIONS = frozenset(
         "set_star_batch",
         "move_email",
         "move_emails_batch",
+        "trash_email",
+        "trash_emails_batch",
     }
 )
 _PARAMETERS = {
@@ -60,6 +62,8 @@ _PARAMETERS = {
     "set_star_batch": (frozenset({"identities", "enabled"}), frozenset({"client_id"})),
     "move_email": (frozenset({"identity", "destination_mailbox"}), frozenset({"client_id"})),
     "move_emails_batch": (frozenset({"identities", "destination_mailbox"}), frozenset({"client_id"})),
+    "trash_email": (frozenset({"identity"}), frozenset({"client_id"})),
+    "trash_emails_batch": (frozenset({"identities"}), frozenset({"client_id"})),
 }
 
 
@@ -349,6 +353,8 @@ RESPONSE_SCHEMAS = {
     "set_star_batch": A({"$ref": "BatchFlagChange"}),
     "move_email": {"$ref": "MoveResult"},
     "move_emails_batch": A({"$ref": "BatchMoveResult"}),
+    "trash_email": {"$ref": "MoveResult"},
+    "trash_emails_batch": A({"$ref": "BatchMoveResult"}),
 }
 
 

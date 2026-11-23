@@ -9,3 +9,7 @@ class ImapClientError(RuntimeError):
 
 class ImapMovePartialError(ImapClientError):
     """Raised when a fallback copy succeeded but move completion is uncertain."""
+
+
+class ImapMoveOutcomeUnknownError(ImapClientError):
+    """Raised when completion of a native MOVE cannot be established."""

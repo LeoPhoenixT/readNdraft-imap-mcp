@@ -36,9 +36,11 @@ EXPECTED_TOOLS = frozenset(
         "set_read_state_batch",
         "set_star_batch",
         "move_emails_batch",
+        "trash_email",
+        "trash_emails_batch",
     }
 )
-EXPECTED_TOOL_SCHEMA_DIGEST = "337e10a8714f548a320e49078dc9f0714921653c37ac61a3b6af83ef264349f8"
+EXPECTED_TOOL_SCHEMA_DIGEST = "2771fb5c0fed7514e6e232e3e2847a5fe0a9b8a72e0eb56d4ee8eb1d898b4a2f"
 
 
 def _event_items(events: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:

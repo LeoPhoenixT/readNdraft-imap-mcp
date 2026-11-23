@@ -4,10 +4,11 @@ import imaplib
 import re
 import ssl
 import unicodedata
+from collections.abc import Callable
 from dataclasses import replace
 from email import policy
 from email.parser import BytesParser
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 from readndraft_imap_mcp.drafts import DraftProvenance
 from readndraft_imap_mcp.imap.bodystructure import BodyStructureError, MimePart, parse_bodystructure
@@ -32,7 +33,7 @@ from readndraft_imap_mcp.mime.parser import (
 if TYPE_CHECKING:
     from readndraft_imap_mcp.broker.accounts import AccountConfig
 
-from .errors import ImapClientError, ImapMovePartialError
+from .errors import ImapClientError, ImapMoveOutcomeUnknownError, ImapMovePartialError
 from .mime_selection import body_candidates, contains_attached_message, part_message, selected_message_content
 from .models import (
     AttachmentContent,
@@ -81,7 +82,8 @@ from .parsing import (
     _validated_fetch_records as _validated_fetch_records,
 )
 
-_MOVE_BLOCKED_FLAGS = frozenset(flag.casefold() for flag in (r"\Trash", r"\Junk", r"\Drafts", r"\Sent"))
+_TRASH_FLAG = r"\trash"
+_MOVE_BLOCKED_FLAGS = frozenset({_TRASH_FLAG, r"\junk", r"\drafts", r"\sent"})
 
 
 class ImapClient:
@@ -176,16 +178,36 @@ class ImapClient:
         finally:
             self.connection = None
 
-    def list_mailboxes(self) -> tuple[Mailbox, ...]:
+    def list_mailboxes(self, *, special_use: bool = False) -> tuple[Mailbox, ...]:
+        imap = self.imap
+        if special_use:
+            status, data = imap._simple_command("LIST", '""', '"*"', "RETURN", "(SPECIAL-USE)")
+            response = imap._untagged_response(status, data, "LIST")
+        else:
+            response = imap.list()
         result: list[Mailbox] = []
-        for line in _expect_ok(self.imap.list(), "LIST"):
-            if not isinstance(line, bytes):
+        for line in _expect_ok(response, "LIST"):
+            if line is None or line == b"":
                 continue
-            match = _LIST_RE.match(line)
+            literal = None
+            if isinstance(line, tuple) and len(line) == 2 and all(isinstance(part, bytes) for part in line):
+                line, literal = line
+            match = _LIST_RE.fullmatch(line) if isinstance(line, bytes) else None
             if not match:
                 raise ImapClientError("unsupported LIST response")
             delimiter = match.group("delimiter")
-            name = _raw_mailbox_name(match.group("name"))
+            encoded_name = match.group("name")
+            try:
+                if literal is None:
+                    if encoded_name.startswith(b"{"):
+                        raise ImapClientError("LIST response omitted mailbox literal")
+                    name = _raw_mailbox_name(encoded_name)
+                else:
+                    if encoded_name != b"{%d}" % len(literal):
+                        raise ImapClientError("LIST response contained an invalid mailbox literal")
+                    name = literal.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ImapClientError("LIST response contained an invalid mailbox name") from exc
             result.append(
                 Mailbox(
                     name=name,
@@ -254,34 +276,34 @@ class ImapClient:
             for token in item.split()
         }
 
-    def _copy_uid(self, data: Iterable[Any], source_uid: str) -> tuple[str, str] | None:
+    @staticmethod
+    def _copy_uid(imap: imaplib.IMAP4, data: Iterable[Any], source_uid: str) -> tuple[str, str] | None:
         candidates = [item for item in data if isinstance(item, bytes)]
         try:
-            _, response = self.imap.response("COPYUID")
+            _, response = imap.response("COPYUID")
         except (AttributeError, imaplib.IMAP4.error):
             response = None
         if response:
             candidates.extend(item for item in response if isinstance(item, bytes))
-        combined = b" ".join(candidates)
-        match = _COPYUID_RE.search(combined)
-        if match is None:
-            match = _COPYUID_VALUE_RE.fullmatch(combined.strip())
-        if match is None or match.group("source").decode("ascii") != source_uid:
-            return None
-        return (
-            match.group("validity").decode("ascii"),
-            match.group("destination").decode("ascii"),
-        )
+        for candidate in candidates:
+            match = _COPYUID_RE.search(candidate) or _COPYUID_VALUE_RE.fullmatch(candidate.strip())
+            if match is not None and match.group("source").decode("ascii") == source_uid:
+                return match.group("validity").decode("ascii"), match.group("destination").decode("ascii")
+        return None
 
-    def _move_mailbox(self, name: str, *, role: str) -> Mailbox:
-        matches = [mailbox for mailbox in self.list_mailboxes() if mailbox.name == name]
+    @staticmethod
+    def _move_mailbox(
+        mailboxes: tuple[Mailbox, ...], name: str, *, role: str, allow_trash: bool = False,
+    ) -> Mailbox:
+        matches = [mailbox for mailbox in mailboxes if mailbox.name == name]
         if len(matches) != 1:
             raise ValueError(f"{role} mailbox must be one exact existing mailbox")
         mailbox = matches[0]
         flags = {flag.casefold() for flag in mailbox.flags}
-        if r"\noselect".casefold() in flags:
+        if flags & {r"\noselect", r"\nonexistent"}:
             raise ValueError(f"{role} mailbox is not selectable")
-        if flags & _MOVE_BLOCKED_FLAGS:
+        blocked_flags = _MOVE_BLOCKED_FLAGS - {_TRASH_FLAG} if allow_trash else _MOVE_BLOCKED_FLAGS
+        if flags & blocked_flags:
             raise PermissionError(f"movement involving the {role} mailbox is prohibited")
         return mailbox
 
@@ -973,65 +995,105 @@ class ImapClient:
         capabilities = self._capabilities()
         if "UIDPLUS" not in capabilities:
             raise ImapClientError("message movement requires UIDPLUS")
-        source = self._move_mailbox(identity.mailbox, role="source")
-        destination = self._move_mailbox(destination_mailbox, role="destination")
+        mailboxes = self.list_mailboxes(special_use="SPECIAL-USE" in capabilities)
+        source = self._move_mailbox(mailboxes, identity.mailbox, role="source")
+        destination = self._move_mailbox(mailboxes, destination_mailbox, role="destination")
         if source.name == destination.name:
             raise ValueError("source and destination mailboxes must differ")
 
-        current_uid_validity = self._select(source.name, readonly=False)
+        if "MOVE" in capabilities:
+            return self._uid_move(identity, destination.name)
+
+        self._select_move_source(identity)
+        imap = self.imap
+        data = _expect_ok(
+            imap.uid("COPY", identity.uid, _quote_mailbox(destination.name)),
+            "UID COPY move destination",
+        )
+        mapping = self._copy_uid(imap, data, identity.uid)
+        if mapping is None:
+            raise ImapMovePartialError(
+                "UIDPLUS server omitted COPYUID; source retained and destination requires review"
+            )
+        try:
+            _expect_ok(
+                self.imap.uid("STORE", identity.uid, "+FLAGS.SILENT", r"(\Deleted)"),
+                "UID STORE move source deleted",
+            )
+            _expect_ok(
+                self.imap.uid("EXPUNGE", identity.uid),
+                "UID EXPUNGE move source",
+            )
+        except Exception as exc:
+            try:
+                _expect_ok(
+                    self.imap.uid("STORE", identity.uid, "-FLAGS.SILENT", r"(\Deleted)"),
+                    "UID STORE move rollback",
+                )
+                if r"\Deleted" in self._get_flags(identity.uid):
+                    raise ImapClientError("move rollback did not clear deleted state")
+            except Exception:
+                pass
+            raise ImapMovePartialError("destination copied; source state requires review") from exc
+        return self._move_result(identity, destination.name, mapping, "uidplus_copy_delete")
+
+    def prepare_trash_move(self) -> tuple[str, Callable[[MessageIdentity], MoveResult]]:
+        capabilities = self._capabilities()
+        if not capabilities & {"MOVE", "IMAP4REV2"}:
+            raise ImapClientError("moving to Trash requires native IMAP MOVE")
+        mailboxes = self.list_mailboxes(special_use="SPECIAL-USE" in capabilities)
+        candidates = [mailbox.name for mailbox in mailboxes if _TRASH_FLAG in map(str.casefold, mailbox.flags)]
+        if len(candidates) != 1:
+            raise ImapClientError("server must expose exactly one SPECIAL-USE Trash mailbox")
+        destination = self._move_mailbox(mailboxes, candidates[0], role="destination", allow_trash=True)
+
+        def trash(identity: MessageIdentity) -> MoveResult:
+            if identity.account_id != self.account.account_id:
+                raise PermissionError("message identity belongs to another account")
+            self._move_mailbox(mailboxes, identity.mailbox, role="source")
+            return self._uid_move(identity, destination.name)
+
+        return destination.name, trash
+
+    def _select_move_source(self, identity: MessageIdentity) -> None:
+        current_uid_validity = self._select(identity.mailbox, readonly=False)
         if current_uid_validity != identity.uid_validity:
             raise ImapClientError("UIDVALIDITY changed; message must be resolved again")
         self._get_flags(identity.uid)
 
-        if "MOVE" in capabilities:
-            command = getattr(self.imap, "_simple_command", None)
-            if command is None:
-                raise ImapClientError("IMAP implementation cannot issue UID MOVE")
-            data = _expect_ok(
-                command("UID", "MOVE", identity.uid, _quote_mailbox(destination.name)),
-                "UID MOVE message",
-            )
-            mapping = self._copy_uid(data, identity.uid)
-            method = "uid_move"
-        else:
-            data = _expect_ok(
-                self.imap.uid("COPY", identity.uid, _quote_mailbox(destination.name)),
-                "UID COPY move destination",
-            )
-            mapping = self._copy_uid(data, identity.uid)
-            if mapping is None:
-                raise ImapMovePartialError(
-                    "UIDPLUS server omitted COPYUID; source retained and destination requires review"
-                )
-            try:
-                _expect_ok(
-                    self.imap.uid("STORE", identity.uid, "+FLAGS.SILENT", r"(\Deleted)"),
-                    "UID STORE move source deleted",
-                )
-                _expect_ok(
-                    self.imap.uid("EXPUNGE", identity.uid),
-                    "UID EXPUNGE move source",
-                )
-            except Exception as exc:
-                try:
-                    _expect_ok(
-                        self.imap.uid("STORE", identity.uid, "-FLAGS.SILENT", r"(\Deleted)"),
-                        "UID STORE move rollback",
-                    )
-                    if r"\Deleted" in self._get_flags(identity.uid):
-                        raise ImapClientError("move rollback did not clear deleted state")
-                except Exception:
-                    pass
-                raise ImapMovePartialError("destination copied; source state requires review") from exc
-            method = "uidplus_copy_delete"
+    def _uid_move(self, identity: MessageIdentity, destination_mailbox: str) -> MoveResult:
+        self._select_move_source(identity)
+        imap = self.imap
+        command = getattr(imap, "_simple_command", None)
+        if command is None:
+            raise ImapClientError("IMAP implementation cannot issue UID MOVE")
+        destination = _quote_mailbox(destination_mailbox)
+        try:
+            status, data = command("UID", "MOVE", identity.uid, destination)
+        except (OSError, imaplib.IMAP4.abort) as exc:
+            raise ImapMoveOutcomeUnknownError("UID MOVE outcome is unknown") from exc
+        if status == "NO":
+            # RFC 6851 permits partial completion even without a COPYUID response.
+            raise ImapMoveOutcomeUnknownError("server rejected UID MOVE; message location is uncertain")
+        _expect_ok((status, data), "UID MOVE message")
+        mapping = self._copy_uid(imap, data, identity.uid)
+        return self._move_result(identity, destination_mailbox, mapping, "uid_move")
+
+    @staticmethod
+    def _move_result(
+        identity: MessageIdentity,
+        destination_mailbox: str,
+        mapping: tuple[str, str] | None,
+        method: Literal["uid_move", "uidplus_copy_delete"],
+    ) -> MoveResult:
         destination_identity = (
             MessageIdentity(
                 identity.account_id,
-                destination.name,
+                destination_mailbox,
                 mapping[0],
                 mapping[1],
             )
             if mapping is not None
             else None
         )
-        return MoveResult(identity, destination.name, destination_identity, method=method)
+        return MoveResult(identity, destination_mailbox, destination_identity, method=method)

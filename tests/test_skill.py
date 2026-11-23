@@ -46,6 +46,8 @@ def test_skill_mentions_only_real_tools() -> None:
             "set_read_state_batch",
             "move_email",
             "move_emails_batch",
+            "trash_email",
+            "trash_emails_batch",
         )
         if name in skill_text
     }

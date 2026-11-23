@@ -308,3 +308,18 @@ class BrokerService:
             lambda: self._mutations.move_emails_batch(identities, destination_mailbox, client_id),
             account_ids=account_ids,
         )
+
+    async def trash_email(self, identity: MessageIdentity, client_id: str | None = None) -> MoveResult:
+        return await self._execution._with_request_context(
+            lambda: self._mutations.trash_email(identity, client_id),
+            account_ids=(identity.account_id,),
+        )
+
+    async def trash_emails_batch(
+        self, identities: tuple[MessageIdentity, ...], client_id: str | None = None,
+    ) -> tuple[BatchMoveResult, ...]:
+        account_ids = tuple(dict.fromkeys(item.account_id for item in identities))
+        return await self._execution._with_request_context(
+            lambda: self._mutations.trash_emails_batch(identities, client_id),
+            account_ids=account_ids,
+        )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import contextmanager
+from dataclasses import asdict
 
 from mcp.shared.memory import create_connected_server_and_client_session
 
@@ -162,6 +163,14 @@ class FakeBroker:
         move = await self.move_email(IDENTITY, destination_mailbox, client_id)
         return (BatchMoveResult(IDENTITY, True, move),)
 
+    async def trash_email(self, identity, client_id=None):
+        assert identity == IDENTITY
+        return MoveResult(identity, "Deleted Items", MessageIdentity("personal", "Deleted Items", "77", "99"))
+
+    async def trash_emails_batch(self, identities, client_id=None):
+        assert identities == (IDENTITY,)
+        return (BatchMoveResult(IDENTITY, True, await self.trash_email(IDENTITY, client_id)),)
+
 
 async def exercise_server() -> None:
     server = create_server(FakeBroker())
@@ -185,6 +194,8 @@ async def exercise_server() -> None:
             "set_star_batch",
             "move_email",
             "move_emails_batch",
+            "trash_email",
+            "trash_emails_batch",
         }
         schemas = repr([tool.inputSchema for tool in listed.tools]).casefold()
         for forbidden in ("password", "credential", "hostname", "raw_imap"):
@@ -214,6 +225,10 @@ async def exercise_server() -> None:
         assert tools["update_draft"].annotations.destructiveHint is True
         assert tools["move_email"].annotations.destructiveHint is True
         assert tools["move_email"].annotations.idempotentHint is False
+        for name in ("trash_email", "trash_emails_batch"):
+            assert tools[name].annotations.destructiveHint is True
+            assert tools[name].inputSchema["additionalProperties"] is False
+            assert "destination_mailbox" not in tools[name].inputSchema["properties"]
 
         accounts = await session.call_tool("list_accounts")
         assert accounts.isError is False
@@ -488,6 +503,23 @@ async def exercise_server() -> None:
         assert batch_moved.structuredContent["result"][0]["move"][
             "destination_mailbox"
         ] == "Archive"
+
+        trashed = await session.call_tool("trash_email", asdict(IDENTITY))
+        assert trashed.isError is False, trashed.content
+        assert trashed.structuredContent["destination_mailbox"] == "Deleted Items"
+        batch_trashed = await session.call_tool("trash_emails_batch", {"identities": [asdict(IDENTITY)]})
+        assert batch_trashed.isError is False, batch_trashed.content
+        assert batch_trashed.structuredContent["result"][0]["move"]["destination_mailbox"] == "Deleted Items"
+        for name, arguments in (
+            ("trash_email", asdict(IDENTITY)),
+            ("trash_emails_batch", {"identities": [asdict(IDENTITY)]}),
+        ):
+            rejected = await session.call_tool(name, {**arguments, "destination_mailbox": "Archive"})
+            assert rejected.isError and "unexpected Trash tool arguments" in repr(rejected.content)
+        rejected = await session.call_tool(
+            "trash_emails_batch", {"identities": [{**asdict(IDENTITY), "destination_mailbox": "Archive"}]},
+        )
+        assert rejected.isError and "extra inputs are not permitted" in repr(rejected.content).casefold()
 
         rejected = await session.call_tool(
             "search_emails", {"targets": [{"account_id": "personal", "mailbox": "INBOX"}], "limit": 501}

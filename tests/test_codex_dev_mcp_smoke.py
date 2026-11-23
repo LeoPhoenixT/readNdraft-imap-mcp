@@ -47,6 +47,8 @@ def test_expected_tools_are_metadata_free_to_discover() -> None:
     assert "create_draft" in smoke.EXPECTED_TOOLS
     assert "move_email" in smoke.EXPECTED_TOOLS
     assert "move_emails_batch" in smoke.EXPECTED_TOOLS
+    assert "trash_email" in smoke.EXPECTED_TOOLS
+    assert "trash_emails_batch" in smoke.EXPECTED_TOOLS
     assert all(isinstance(name, str) for name in smoke.EXPECTED_TOOLS)
 
 

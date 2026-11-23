@@ -14,6 +14,7 @@ from typing import TypeVar
 
 from readndraft_imap_mcp.credentials import CredentialStore
 from readndraft_imap_mcp.imap.client import ImapClient
+from readndraft_imap_mcp.safe_error import SafeError
 
 from .accounts import AccountConfig, AccountRegistry
 from .common import BatchItemOutcome, batch_error
@@ -342,6 +343,7 @@ class BrokerExecutionContext:
         *,
         max_items: int,
         write: bool = False,
+        before_batch: Callable[[ImapClient], None] | None = None,
         before_item: Callable[[Item], Awaitable[None]] | None = None,
     ) -> tuple[BatchItemOutcome[T], ...]:
         if not items or len(items) > max_items:
@@ -349,7 +351,8 @@ class BrokerExecutionContext:
         if _request_context.get() is None:
             return await self._with_request_context(
                 lambda: self._batch_client_call(
-                    account_id, items, operation, max_items=max_items, write=write, before_item=before_item,
+                    account_id, items, operation, max_items=max_items, write=write,
+                    before_batch=before_batch, before_item=before_item,
                 ),
                 account_ids=(account_id,),
             )
@@ -357,6 +360,8 @@ class BrokerExecutionContext:
         work = await self._acquire_client_work(context, account_id)
         try:
             client = await asyncio.shield(_worker_future(work.submit(work.open)))
+            if before_batch is not None:
+                await asyncio.shield(_worker_future(work.submit(lambda: before_batch(client))))
             outcomes: list[BatchItemOutcome[T]] = []
             for index, item in enumerate(items):
                 started = threading.Event()
@@ -375,11 +380,14 @@ class BrokerExecutionContext:
                     error = batch_error(exc, outcome_unknown=write and started.is_set())
                     outcomes.append(BatchItemOutcome(error=error))
                     if error.code == "outcome_unknown" or context.cancelled.is_set() or context.remaining() <= 0:
-                        remaining_error = (
-                            batch_error(OSError("mail server connection lost"))
-                            if error.reason == "transport_loss"
-                            else batch_error(TimeoutError("broker request deadline expired"))
-                        )
+                        if error.reason == "transport_loss":
+                            remaining_error = batch_error(OSError("mail server connection lost"))
+                        elif error.code == "outcome_unknown" and error.reason is None:
+                            remaining_error = SafeError(
+                                "recovery_required", "write not attempted; reconcile the previous move first", "item",
+                            )
+                        else:
+                            remaining_error = batch_error(TimeoutError("broker request deadline expired"))
                         outcomes.extend(BatchItemOutcome(error=remaining_error) for _ in items[index + 1 :])
                         break
             return tuple(outcomes)

@@ -48,8 +48,8 @@ SMOKE_SPEC.loader.exec_module(smoke)
 # Bump IPC_PROTOCOL_VERSION and re-pin BOTH values below whenever the IPC
 # wire contract changes. A stale broker must never be reachable by a newer
 # frontend: the endpoint name is derived from IPC_PROTOCOL_VERSION.
-EXPECTED_PROTOCOL_VERSION = 13
-EXPECTED_CONTRACT_DIGEST = "101c3b3fa6d4cadc34b2aa8b2a9ecb056b2edc3ff56eb5e0c804ff8e385e7046"
+EXPECTED_PROTOCOL_VERSION = 14
+EXPECTED_CONTRACT_DIGEST = "8c1d31ac817fe0cc343c9ce4399f353c34d69a895490da958c0d782e781a70d3"
 
 
 def _contract_digest() -> str:
@@ -130,6 +130,8 @@ def test_static_response_schemas_match_serialized_dataclass_models() -> None:
         "set_star_batch": list[BatchFlagChange],
         "move_email": MoveResult,
         "move_emails_batch": list[BatchMoveResult],
+        "trash_email": MoveResult,
+        "trash_emails_batch": list[BatchMoveResult],
     }
     for operation, model in models.items():
         assert resolve_response_schema(RESPONSE_SCHEMAS[operation]) == _model_schema(model)

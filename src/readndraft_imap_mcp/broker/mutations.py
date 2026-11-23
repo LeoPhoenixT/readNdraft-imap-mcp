@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from time import perf_counter
 from typing import TYPE_CHECKING
 
 from readndraft_imap_mcp.audit import AuditEvent, AuditSink, AuditUnavailableError
+from readndraft_imap_mcp.audit.model import MovementOperation
 from readndraft_imap_mcp.imap.client import ImapClient
 from readndraft_imap_mcp.imap.models import BatchFlagChange, BatchMoveResult, FlagChange, MessageIdentity, MoveResult
 
@@ -177,18 +179,41 @@ class MutationService:
         destination_mailbox: str,
         client_id: str | None = None,
     ) -> MoveResult:
+        return await self._move_email(identity, destination_mailbox, client_id, operation="move_email")
+
+    async def trash_email(self, identity: MessageIdentity, client_id: str | None = None) -> MoveResult:
+        return await self._move_email(identity, None, client_id, operation="trash_email")
+
+    async def _move_email(
+        self,
+        identity: MessageIdentity,
+        destination_mailbox: str | None,
+        client_id: str | None,
+        *,
+        operation: MovementOperation,
+    ) -> MoveResult:
         if self._audit is None:
             raise AuditUnavailableError("audit sink is required for mutations")
+
+        def move(client: ImapClient) -> MoveResult:
+            nonlocal destination_mailbox
+            if operation == "trash_email":
+                destination_mailbox, trash = client.prepare_trash_move()
+                return trash(identity)
+            assert destination_mailbox is not None
+            return client.move_email(identity, destination_mailbox)
+
         started = perf_counter()
         try:
             result = await self._execution._client_call(
                 identity.account_id,
-                lambda client: client.move_email(identity, destination_mailbox),
+                move,
                 response_timeout=False,
             )
         except Exception as exc:
             await self._audit.record(
                 AuditEvent.movement(
+                    operation=operation,
                     account_id=identity.account_id,
                     mailbox=identity.mailbox,
                     uid=identity.uid,
@@ -203,6 +228,7 @@ class MutationService:
         destination = result.destination_identity
         await self._audit.record(
             AuditEvent.movement(
+                operation=operation,
                 account_id=identity.account_id,
                 mailbox=identity.mailbox,
                 uid=identity.uid,
@@ -223,19 +249,46 @@ class MutationService:
         destination_mailbox: str,
         client_id: str | None = None,
     ) -> tuple[BatchMoveResult, ...]:
+        return await self._move_emails_batch(identities, destination_mailbox, client_id, operation="move_email")
+
+    async def trash_emails_batch(
+        self, identities: tuple[MessageIdentity, ...], client_id: str | None = None,
+    ) -> tuple[BatchMoveResult, ...]:
+        return await self._move_emails_batch(identities, None, client_id, operation="trash_email")
+
+    async def _move_emails_batch(
+        self,
+        identities: tuple[MessageIdentity, ...],
+        destination_mailbox: str | None,
+        client_id: str | None,
+        *,
+        operation: MovementOperation,
+    ) -> tuple[BatchMoveResult, ...]:
         if self._audit is None:
             raise AuditUnavailableError("audit sink is required for mutations")
         account_ids, _ = validate_identity_batch(identities, max_items=50, max_accounts=1, exact_accounts=True)
         account_id = account_ids[0]
+        trash: Callable[[MessageIdentity], MoveResult] | None = None
+
+        def prepare_trash(client: ImapClient) -> None:
+            nonlocal destination_mailbox, trash
+            destination_mailbox, trash = client.prepare_trash_move()
+
+        def move_one(client: ImapClient, identity: MessageIdentity) -> MoveResult:
+            if trash is not None:
+                return trash(identity)
+            assert destination_mailbox is not None
+            return client.move_email(identity, destination_mailbox)
+
         started = perf_counter()
         try:
             outcomes = await self._execution._batch_client_call(
                 account_id,
                 identities,
-                lambda client, identity: client.move_email(identity, destination_mailbox),
+                move_one,
                 max_items=50,
-
                 write=True,
+                before_batch=prepare_trash if operation == "trash_email" else None,
             )
         except Exception as exc:
             outcomes = tuple(BatchItemOutcome[MoveResult](error=batch_error(exc)) for _ in identities)
@@ -246,6 +299,7 @@ class MutationService:
             destination = move.destination_identity if move is not None else None
             await self._audit.record(
                 AuditEvent.movement(
+                    operation=operation,
                     account_id=identity.account_id,
                     mailbox=identity.mailbox,
                     uid=identity.uid,

@@ -6,6 +6,7 @@ import os
 import platform
 import threading
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -529,6 +530,39 @@ def test_rpc_move_contract_is_exact_and_serializes_results() -> None:
         },
     ):
         rejected = json.loads(server.handle_frame(_frame("move_email", params)))
+        assert rejected["ok"] is False
+        assert rejected["error"]["code"] == "invalid_request"
+
+
+def test_rpc_trash_contract_fixes_destination_and_round_trips_both_operations(monkeypatch) -> None:
+    source = MessageIdentity("personal", "INBOX", "42", "7")
+    move = MoveResult(source, "Deleted Items", MessageIdentity("personal", "Deleted Items", "77", "99"))
+
+    class TrashBroker(FakeBroker):
+        async def trash_email(self, identity, client_id=None):
+            assert (identity, client_id) == (source, "client-1")
+            return move
+
+        async def trash_emails_batch(self, identities, client_id=None):
+            assert (identities, client_id) == ((source,), "client-1")
+            return (BatchMoveResult(source, True, move),)
+
+    server = BrokerRpcServer(TrashBroker(), "unused", b"x")
+    client = IpcBrokerClient("unused", b"x")
+
+    def request(operation, parameters):
+        response = json.loads(server.handle_frame(_frame(operation, parameters)))
+        assert response["ok"], response
+        return response["result"]
+
+    monkeypatch.setattr(client, "_request_sync", request)
+    assert asyncio.run(client.trash_email(source, "client-1")) == move
+    assert asyncio.run(client.trash_emails_batch((source,), "client-1")) == (BatchMoveResult(source, True, move),)
+    for operation, params in (
+        ("trash_email", {"identity": asdict(source)}),
+        ("trash_emails_batch", {"identities": [asdict(source)]}),
+    ):
+        rejected = json.loads(server.handle_frame(_frame(operation, {**params, "destination_mailbox": "Archive"})))
         assert rejected["ok"] is False
         assert rejected["error"]["code"] == "invalid_request"
 

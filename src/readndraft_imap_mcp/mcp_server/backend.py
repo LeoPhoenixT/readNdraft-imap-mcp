@@ -133,6 +133,12 @@ class BrokerBackend(Protocol):
         client_id: str | None = None,
     ) -> tuple[BatchMoveResult, ...]: ...
 
+    async def trash_email(self, identity: MessageIdentity, client_id: str | None = None) -> MoveResult: ...
+
+    async def trash_emails_batch(
+        self, identities: tuple[MessageIdentity, ...], client_id: str | None = None,
+    ) -> tuple[BatchMoveResult, ...]: ...
+
 
 class UnavailableBroker:
     """Fail-closed placeholder until the local broker transport is wired."""
@@ -198,6 +204,12 @@ class UnavailableBroker:
     async def move_emails_batch(
         self, identities, destination_mailbox, client_id=None
     ):
+        return self._unavailable()
+
+    async def trash_email(self, identity, client_id=None):
+        return self._unavailable()
+
+    async def trash_emails_batch(self, identities, client_id=None):
         return self._unavailable()
 
 

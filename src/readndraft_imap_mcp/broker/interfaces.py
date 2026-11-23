@@ -35,6 +35,7 @@ class BatchExecution(ClientExecution, Protocol):
         *,
         max_items: int,
         write: bool = False,
+        before_batch: Callable[[ImapClient], None] | None = None,
         before_item: Callable[[Item], Awaitable[None]] | None = None,
     ) -> tuple[BatchItemOutcome[T], ...]: ...
 

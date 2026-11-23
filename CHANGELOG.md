@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- Move one or up to 50 selected ordinary messages to the account's
+  server-designated Trash using native IMAP MOVE. Batch results are ordered
+  and report success or failure per message.
+
+### Changed
+
+- Upgrade the local broker protocol to IPC 14. Update the frontend and broker
+  together.
+
 ## 0.13.1
 
 ### Fixed

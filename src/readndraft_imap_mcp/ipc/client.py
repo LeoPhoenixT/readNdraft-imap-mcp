@@ -53,6 +53,8 @@ _WRITE_OPERATIONS = frozenset(
         "set_read_state_batch",
         "move_email",
         "move_emails_batch",
+        "trash_email",
+        "trash_emails_batch",
     }
 )
 
@@ -430,6 +432,16 @@ class IpcBrokerClient:
                 "destination_mailbox": destination_mailbox,
                 "client_id": client_id,
             },
+        )
+        return tuple(_batch_move_result(item) for item in items)
+
+    async def trash_email(self, identity, client_id=None):
+        item = await self._request("trash_email", {"identity": asdict(identity), "client_id": client_id})
+        return _move_result(item)
+
+    async def trash_emails_batch(self, identities, client_id=None):
+        items = await self._request(
+            "trash_emails_batch", {"identities": [asdict(item) for item in identities], "client_id": client_id},
         )
         return tuple(_batch_move_result(item) for item in items)
 

@@ -123,3 +123,15 @@ request separate copy, deleted-flag, expunge, or raw-IMAP tools. Use
 require unambiguous reselection. On `partial_move`, connection failure,
 `outcome_unknown`, or any ambiguous outcome, inspect both mailboxes and never retry
 automatically because the destination copy or completed move may already exist.
+
+## Move messages to Trash
+
+Present the account, exact source mailboxes and message identities, and count.
+Obtain direct conversational confirmation immediately before calling
+`trash_email` or `trash_emails_batch` for 1–50 unique identities from one
+account. The broker discovers a unique selectable `\Trash` mailbox and uses
+native UID MOVE. If the server cannot meet either requirement, report the
+failure. The tools return ordered per-message batch results and any available
+destination identities. Report partial results. On `outcome_unknown` or
+`partial_move`, inspect both mailboxes before considering a retry. Recovery
+uses the provider's mail client while the message is retained.

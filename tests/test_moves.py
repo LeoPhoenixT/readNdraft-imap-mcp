@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import imaplib
+from dataclasses import replace
 
 import pytest
 
@@ -11,6 +13,7 @@ from readndraft_imap_mcp.imap.client import (
     ImapClientError,
     ImapMovePartialError,
 )
+from readndraft_imap_mcp.imap.errors import ImapMoveOutcomeUnknownError
 from readndraft_imap_mcp.imap.models import MessageIdentity, MoveResult
 
 IDENTITY = MessageIdentity("personal", "INBOX", "42", "7")
@@ -323,3 +326,224 @@ def test_broker_move_batch_enforces_size_limit(count: int) -> None:
         asyncio.run(
             build_broker(MemoryAudit()).move_emails_batch(identities, "Archive")
         )
+
+
+class TrashConnection(MoveConnection):
+    def __init__(
+        self,
+        *,
+        trash_entries: tuple[tuple[str, tuple[str, ...]], ...] = (("Deleted Items", (r"\tRaSh",)),),
+        capabilities: bytes = b"IMAP4rev1 MOVE",
+        disconnect_uid: str | None = None,
+    ) -> None:
+        super().__init__(capabilities=capabilities)
+        self.trash_entries = trash_entries
+        self.disconnect_uid = disconnect_uid
+        self.list_calls = 0
+
+    def list(self):
+        self.list_calls += 1
+        status, entries = super().list()
+        if b"SPECIAL-USE" not in self.capabilities:
+            entries.extend(self._line(name, flags) for name, flags in self.trash_entries)
+        return status, entries
+
+    def _untagged_response(self, status, data, name):
+        assert name == "LIST"
+        return status, data
+
+    def uid(self, *args):
+        if args == ("FETCH", "8", "(UID FLAGS)"):
+            return "OK", [b""]
+        if args == ("FETCH", "9", "(UID FLAGS)"):
+            return "OK", [b"1 (UID 9 FLAGS ())"]
+        return super().uid(*args)
+
+    def _simple_command(self, *args):
+        self.commands.append(args)
+        if args == ("LIST", '""', '"*"', "RETURN", "(SPECIAL-USE)"):
+            self.list_calls += 1
+            _, entries = super().list()
+            return "OK", entries + [self._line(name, flags) for name, flags in self.trash_entries]
+        assert args[:2] == ("UID", "MOVE")
+        if args[2] == self.disconnect_uid:
+            raise imaplib.IMAP4.abort("connection lost after UID MOVE")
+        return "OK", [f"[COPYUID 77 {args[2]} 99] moved".encode()]
+
+
+def build_trash_broker(connection: TrashConnection, audit=None) -> BrokerService:
+    class TrashClient(ImapClient):
+        def __enter__(self):
+            self.connection = connection
+            return self
+
+        def __exit__(self, *args):
+            self.connection = None
+
+        def bind_request_guard(self, guard, remaining_timeout):
+            self._request_guard = guard
+
+    return build_broker(audit, TrashClient)
+
+
+@pytest.mark.parametrize("capabilities", [b"IMAP4rev1 MOVE", b"IMAP4rev1 MOVE SPECIAL-USE", b"IMAP4rev1 IMAP4rev2"])
+def test_trash_single_discovers_server_role_and_uses_native_move(capabilities: bytes) -> None:
+    connection = TrashConnection(capabilities=capabilities)
+    audit = MemoryAudit()
+    result = asyncio.run(build_trash_broker(connection, audit).trash_email(IDENTITY, client_id="client-1"))
+
+    assert result.destination_identity == MessageIdentity("personal", "Deleted Items", "77", "99")
+    assert result.method == "uid_move"
+    assert connection.list_calls == 1
+    assert ("UID", "MOVE", "7", '"Deleted Items"') in connection.commands
+    assert all(command[0] not in {"COPY", "STORE", "EXPUNGE"} for command in connection.commands)
+    assert [(event.operation, event.destination_mailbox, event.client_id) for event in audit.events] == [
+        ("trash_email", "Deleted Items", "client-1"),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("entries", "error", "match"),
+    [
+        ((), ImapClientError, "exactly one"),
+        ((("One", (r"\Trash",)), ("Two", (r"\Trash",))), ImapClientError, "exactly one"),
+        ((("Trash", (r"\Trash", r"\Noselect")),), ValueError, "not selectable"),
+        ((("Trash", (r"\Trash", r"\NonExistent")),), ValueError, "not selectable"),
+        ((("Trash", (r"\Trash", r"\Junk")),), PermissionError, "prohibited"),
+    ],
+)
+def test_trash_rejects_unusable_destination(entries, error, match) -> None:
+    connection = TrashConnection(trash_entries=entries)
+    with pytest.raises(error, match=match):
+        build_client(connection).prepare_trash_move()
+    assert not connection.commands
+
+
+def test_trash_rejects_unsupported_server_before_writing() -> None:
+    connection = TrashConnection(capabilities=b"IMAP4rev1 UIDPLUS")
+    with pytest.raises(ImapClientError, match="native IMAP MOVE"):
+        build_client(connection).prepare_trash_move()
+    assert not connection.commands
+
+
+def test_trash_accepts_literal_list_names_and_untagged_copyuid() -> None:
+    class LiteralTrashConnection(TrashConnection):
+        def list(self):
+            status, entries = super().list()
+            return status, entries + [(b'(\\Trash) "/" {13}', b"Deleted Items"), b""]
+
+        def _simple_command(self, *args):
+            self.commands.append(args)
+            return "OK", [b"Done"]
+
+        def response(self, name):
+            if name == "COPYUID":
+                return name, [b"77 7 99"]
+            return super().response(name)
+
+    connection = LiteralTrashConnection(trash_entries=())
+    name, trash = build_client(connection).prepare_trash_move()
+    assert name == "Deleted Items"
+    assert trash(IDENTITY).destination_identity == MessageIdentity("personal", name, "77", "99")
+
+    connection = LiteralTrashConnection(trash_entries=(("Other Trash", (r"\Trash",)),))
+    with pytest.raises(ImapClientError, match="exactly one"):
+        build_client(connection).prepare_trash_move()
+    assert not connection.commands
+
+
+def test_trash_checks_source_account_and_uid_validity() -> None:
+    connection = TrashConnection()
+    _, trash = build_client(connection).prepare_trash_move()
+    with pytest.raises(PermissionError, match="another account"):
+        trash(replace(IDENTITY, account_id="work"))
+    with pytest.raises(PermissionError, match="source mailbox"):
+        trash(replace(IDENTITY, mailbox="Deleted Items"))
+    with pytest.raises(ImapClientError, match="UIDVALIDITY"):
+        trash(replace(IDENTITY, uid_validity="12"))
+    assert connection.commands == [("SELECT", '"INBOX"', False)]
+
+
+@pytest.mark.parametrize("direction", ["source", "destination"])
+def test_ordinary_move_rejects_trash_reported_only_by_extended_list(direction: str) -> None:
+    connection = TrashConnection(capabilities=b"IMAP4rev1 MOVE UIDPLUS SPECIAL-USE")
+    identity = replace(IDENTITY, mailbox="Deleted Items") if direction == "source" else IDENTITY
+    destination = "Archive" if direction == "source" else "Deleted Items"
+    with pytest.raises(PermissionError, match=direction):
+        build_client(connection).move_email(identity, destination)
+    assert len(connection.commands) == 1
+
+
+def test_trash_batch_reuses_discovery_and_reports_ordered_partial_results() -> None:
+    connection = TrashConnection()
+    audit = MemoryAudit()
+    identities = (IDENTITY, replace(IDENTITY, mailbox="Deleted Items"), replace(IDENTITY, uid="9"))
+    broker = build_trash_broker(connection, audit)
+    results = asyncio.run(broker.trash_emails_batch(identities))
+
+    assert [item.identity for item in results] == list(identities)
+    assert [item.ok for item in results] == [True, False, True]
+    assert results[1].error.code == "permission_denied"
+    assert connection.list_calls == 1
+    assert [(event.operation, event.success, event.destination_mailbox) for event in audit.events] == [
+        ("trash_email", True, "Deleted Items"),
+        ("trash_email", False, "Deleted Items"),
+        ("trash_email", True, "Deleted Items"),
+    ]
+
+
+def test_trash_batch_rejects_duplicates_cross_account_and_missing_trash_before_writing() -> None:
+    connection = TrashConnection(trash_entries=())
+    audit = MemoryAudit()
+    broker = build_trash_broker(connection, audit)
+    with pytest.raises(ValueError, match="unique"):
+        asyncio.run(broker.trash_emails_batch((IDENTITY, IDENTITY)))
+    with pytest.raises(ValueError, match="exactly one account"):
+        asyncio.run(broker.trash_emails_batch((IDENTITY, replace(IDENTITY, account_id="work"))))
+    assert connection.list_calls == 0
+
+    results = asyncio.run(broker.trash_emails_batch((IDENTITY, replace(IDENTITY, uid="9"))))
+    assert [item.error.code for item in results] == ["imap_error", "imap_error"]
+    assert [event.destination_mailbox for event in audit.events] == [None, None]
+    assert connection.list_calls == 1
+    assert not connection.commands
+
+
+def test_trash_batch_stops_after_unknown_move_and_audits_remaining_items() -> None:
+    connection = TrashConnection(disconnect_uid="7")
+    audit = MemoryAudit()
+    broker = build_trash_broker(connection, audit)
+    results = asyncio.run(broker.trash_emails_batch((IDENTITY, replace(IDENTITY, uid="9"))))
+
+    assert [item.error.code for item in results] == ["outcome_unknown", "connection_error"]
+    assert [event.error_category for event in audit.events] == ["outcome_unknown", "connection_error"]
+    assert [command[2] for command in connection.commands if command[:2] == ("UID", "MOVE")] == ["7"]
+
+
+@pytest.mark.parametrize("reply", [b"move failed", b"[COPYUID 77 7 99] move failed"])
+def test_trash_batch_stops_after_tagged_no(reply: bytes) -> None:
+    class RejectingTrashConnection(TrashConnection):
+        def _simple_command(self, *args):
+            if args[:3] == ("UID", "MOVE", "7"):
+                self.commands.append(args)
+                return "NO", [reply]
+            return super()._simple_command(*args)
+
+    connection = RejectingTrashConnection()
+    audit = MemoryAudit()
+    broker = build_trash_broker(connection, audit)
+    results = asyncio.run(broker.trash_emails_batch((IDENTITY, replace(IDENTITY, uid="9"))))
+
+    assert [command[2] for command in connection.commands if command[:2] == ("UID", "MOVE")] == ["7"]
+    assert [item.error.code for item in results] == ["outcome_unknown", "recovery_required"]
+    assert results[0].error.reason is None
+    assert [event.error_category for event in audit.events] == ["outcome_unknown", "recovery_required"]
+
+
+def test_trash_single_records_unknown_move() -> None:
+    connection = TrashConnection(disconnect_uid="7")
+    audit = MemoryAudit()
+    with pytest.raises(ImapMoveOutcomeUnknownError):
+        asyncio.run(build_trash_broker(connection, audit).trash_email(IDENTITY))
+    assert audit.events[0].error_category == "outcome_unknown"
+    assert audit.events[0].destination_mailbox == "Deleted Items"
