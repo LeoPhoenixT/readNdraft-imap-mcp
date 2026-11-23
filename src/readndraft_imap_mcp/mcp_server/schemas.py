@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class IdentityOutput(BaseModel):
@@ -12,6 +12,10 @@ class IdentityOutput(BaseModel):
     mailbox: str
     uid_validity: str
     uid: str
+
+
+class TrashIdentityInput(IdentityOutput):
+    model_config = ConfigDict(extra="forbid")
 
 
 class AccountOutput(BaseModel):

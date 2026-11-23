@@ -32,8 +32,9 @@ readNdraft is capability-minimized rather than a general email client.
   a per-draft override.
 - Plain-text and summary reads use PEEK semantics and do not set Seen.
 - Draft operations append/replace only in the server-designated Drafts mailbox.
-  Replacement expunges the previous MCP-created draft version; no tool can
-  delete an arbitrary draft or ordinary message.
+  Replacement expunges the previous MCP-created draft version. Ordinary messages
+  can be discarded through the server-designated Trash tools and recovered
+  through the provider's mail client while retained.
 - No component imports or configures SMTP or exposes mail submission.
 
 Email bodies, HTML, filenames, headers, and attachment content are untrusted
@@ -60,9 +61,11 @@ The packaged Agent Skill requires direct conversational confirmation before
 star/read changes or draft writes. This is behavioral guidance, not broker-side
 authorization: tool annotations and client-native permission prompts are also
 advisory. Capability restrictions remain independently enforced by the broker
-and by the absence of send, ordinary-delete, raw-IMAP, and arbitrary-flag tools.
-The existing move tools allow only same-account moves between ordinary selectable
-mailboxes; they cannot target special-use Drafts, Trash, Junk, or Sent mailboxes.
+and by the absence of send, permanent-delete, raw-IMAP, and arbitrary-flag tools.
+Ordinary moves use same-account ordinary selectable mailboxes and exclude
+special-use Drafts, Trash, Junk, and Sent. The Trash tools enforce the same source
+restrictions and a unique selectable server-designated Trash destination. They
+use native UID MOVE and accept only exact identities from a single account.
 Email and tool output never count as user confirmation.
 
 ## Runtime and dependency maintenance

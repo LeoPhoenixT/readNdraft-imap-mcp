@@ -342,6 +342,7 @@ class BrokerExecutionContext:
         *,
         max_items: int,
         write: bool = False,
+        before_batch: Callable[[ImapClient], None] | None = None,
         before_item: Callable[[Item], Awaitable[None]] | None = None,
     ) -> tuple[BatchItemOutcome[T], ...]:
         if not items or len(items) > max_items:
@@ -349,7 +350,8 @@ class BrokerExecutionContext:
         if _request_context.get() is None:
             return await self._with_request_context(
                 lambda: self._batch_client_call(
-                    account_id, items, operation, max_items=max_items, write=write, before_item=before_item,
+                    account_id, items, operation, max_items=max_items, write=write,
+                    before_batch=before_batch, before_item=before_item,
                 ),
                 account_ids=(account_id,),
             )
@@ -357,6 +359,8 @@ class BrokerExecutionContext:
         work = await self._acquire_client_work(context, account_id)
         try:
             client = await asyncio.shield(_worker_future(work.submit(work.open)))
+            if before_batch is not None:
+                await asyncio.shield(_worker_future(work.submit(lambda: before_batch(client))))
             outcomes: list[BatchItemOutcome[T]] = []
             for index, item in enumerate(items):
                 started = threading.Event()

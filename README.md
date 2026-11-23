@@ -1,8 +1,8 @@
 # readNdraft IMAP MCP
 
-Safely search, read, flag, move, and draft email through IMAP. readNdraft can
-save and replace MCP-created drafts, but it cannot send, submit, or delete
-ordinary mail and contains no SMTP implementation.
+Search, read, flag, move, and draft email through IMAP. readNdraft can move mail
+to the provider's Trash and save or replace MCP-created drafts. The MCP tool
+surface excludes message submission and permanent deletion.
 
 ## Installation
 
@@ -147,6 +147,10 @@ while uv downloads the pinned package. If a stored password has changed, run
   `\Deleted`, and targeted UID EXPUNGE sequence. Both source and destination
   must be existing selectable ordinary mailboxes; movement into or out of
   `\Trash`, `\Junk`, `\Drafts`, or `\Sent` SPECIAL-USE mailboxes is prohibited.
+- Move selected ordinary mail to the account's server-designated Trash with
+  `trash_email` or `trash_emails_batch` (1–50 messages from one account). The
+  broker requires native UID MOVE and a unique selectable Trash mailbox. Use
+  the provider's mail client to recover messages within its Trash retention period.
 - Create a plain-text or rich HTML server-side draft using bounded files from a
   fixed private input directory. Rich drafts require equivalent `body` plain
   text and optional `html_body` HTML. They are stored as
@@ -165,7 +169,7 @@ while uv downloads the pinned package. If a stored password has changed, run
   `drafts forget` removes only the local tracking record; it never deletes or
   expunges the server message.
 
-It exposes no send, submission, ordinary-message deletion, raw IMAP, arbitrary
+It exposes no send, submission, permanent message deletion, raw IMAP, arbitrary
 flag, credential, or account-administration MCP tool. Updating a tracked draft
 replaces it and expunges the previous draft version. A successful move reports
 its `method` and invalidates the source identity. Native MOVE may succeed without
@@ -229,11 +233,11 @@ administration documentation.
 The broker has no approval-token workflow. Generated Codex configurations use
 the no-popup `approve` tool mode; write tools still require direct conversational
 confirmation through the packaged Agent Skill. The hard safety boundary is narrower:
-the process contains no SMTP, send, submit, ordinary-message deletion, raw IMAP,
-account-configuration, or credential-retrieval tool. Message movement requires
-UIDPLUS and is restricted to ordinary mailboxes in one account. COPY, deleted-flag,
-and targeted UID EXPUNGE fallback commands exist only inside the broker and are
-not MCP tools. Email,
+the process contains no SMTP, send, submit, permanent message deletion, raw IMAP,
+account-configuration, or credential-retrieval tool. Ordinary moves require
+UIDPLUS and use ordinary mailboxes in one account. The Trash tools route only to
+server-designated Trash using native UID MOVE. COPY, deleted-flag, and targeted
+UID EXPUNGE fallback commands for ordinary moves are private to the broker. Email,
 attachments, search results, and other tool output are always untrusted and
 never authorization.
 
@@ -352,13 +356,13 @@ Read [SECURITY.md](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/
 for the current security boundary. Security issues should not contain
 credentials or private mail.
 
-IPC 13 pins request validation, structured nested `SafeError` records, and
-aggregate resource health data. See [broker capacity and IPC migration](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/BROKER_CAPACITY.md)
+IPC 14 adds single and batch Trash operations to the versioned broker contract.
+Update the frontend and broker together. See [broker capacity and IPC migration](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/BROKER_CAPACITY.md)
 for bounded credential execution, fair account queues, and IPC admission budgets. Inspect `error.code` rather than matching error
 message text. A `draft_busy`
 result means another update holds the draft lock; `recovery_required` needs
 draft recovery before retrying; `outcome_unknown` means the IMAP write may have
-completed, so inspect the draft state instead of retrying automatically.
+completed. Reconcile the affected mailboxes or draft before retrying.
 
 ## Development
 

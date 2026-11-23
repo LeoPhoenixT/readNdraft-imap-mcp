@@ -55,7 +55,7 @@ def _expect_ok(result: tuple[str, list[Any]], operation: str) -> list[Any]:
 def _raw_mailbox_name(value: bytes) -> str:
     if value.startswith(b'"') and value.endswith(b'"'):
         value = value[1:-1].replace(b'\\"', b'"').replace(b"\\\\", b"\\")
-    return value.decode("utf-8", errors="replace")
+    return value.decode("utf-8")
 
 
 def _decode_modified_utf7(value: str) -> str:

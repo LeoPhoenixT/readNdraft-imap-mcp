@@ -175,4 +175,13 @@ class BrokerRpcServer:
                     params.get("client_id"),
                 )
             ]
+        if operation == "trash_email":
+            return asdict(await self.broker.trash_email(_identity(params["identity"]), params.get("client_id")))
+        if operation == "trash_emails_batch":
+            return [
+                asdict(item)
+                for item in await self.broker.trash_emails_batch(
+                    tuple(_identity(value) for value in params["identities"]), params.get("client_id"),
+                )
+            ]
         raise ValueError("operation is not allowed")

@@ -4,12 +4,14 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Literal, Protocol
 
+MovementOperation = Literal["move_email", "trash_email"]
+
 
 @dataclass(frozen=True, slots=True)
 class AuditEvent:
     timestamp: str
     operation: Literal[
-        "set_star", "set_read_state", "move_email", "create_draft", "update_draft"
+        "set_star", "set_read_state", "move_email", "trash_email", "create_draft", "update_draft"
     ]
     account_id: str
     mailbox: str
@@ -69,9 +71,10 @@ class AuditEvent:
         account_id: str,
         mailbox: str,
         uid: str,
-        destination_mailbox: str,
+        destination_mailbox: str | None,
         success: bool,
         duration_ms: int,
+        operation: MovementOperation = "move_email",
         destination_uid_validity: str | None = None,
         destination_uid: str | None = None,
         movement_method: Literal["uid_move", "uidplus_copy_delete"] | None = None,
@@ -80,7 +83,7 @@ class AuditEvent:
     ) -> "AuditEvent":
         return cls(
             timestamp=datetime.now(UTC).isoformat(),
-            operation="move_email",
+            operation=operation,
             account_id=account_id,
             mailbox=mailbox,
             uid=uid,

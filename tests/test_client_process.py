@@ -51,6 +51,8 @@ async def _exercise_stdio(tmp_path) -> None:
             "set_read_state_batch",
             "move_email",
             "move_emails_batch",
+            "trash_email",
+            "trash_emails_batch",
     }
 
 

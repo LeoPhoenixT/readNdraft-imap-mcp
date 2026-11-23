@@ -8,6 +8,7 @@ from typing import Generic, TypeVar
 
 from readndraft_imap_mcp.drafts import DraftBusyError, DraftRecoveryRequiredError
 from readndraft_imap_mcp.imap.client import ImapClientError, ImapMovePartialError
+from readndraft_imap_mcp.imap.errors import ImapMoveOutcomeUnknownError
 from readndraft_imap_mcp.imap.models import MessageIdentity
 from readndraft_imap_mcp.safe_error import SafeError, SafeErrorScope
 
@@ -30,17 +31,19 @@ def batch_error(
     scope: SafeErrorScope = "item",
     outcome_unknown: bool = False,
 ) -> SafeError:
-    if outcome_unknown and isinstance(exc, (TimeoutError, OSError, imaplib.IMAP4.abort)):
+    if isinstance(exc, PermissionError):
+        return SafeError("permission_denied", "request denied", scope)
+    unknown_move = isinstance(exc, ImapMoveOutcomeUnknownError)
+    if unknown_move or (outcome_unknown and isinstance(exc, (OSError, imaplib.IMAP4.abort))):
+        cause = exc.__cause__ if unknown_move else exc
         return SafeError(
             "outcome_unknown",
             "write outcome is unknown; do not retry automatically",
             scope,
-            "request_deadline" if isinstance(exc, TimeoutError) else "transport_loss",
+            "request_deadline" if isinstance(cause, TimeoutError) else "transport_loss",
         )
     if isinstance(exc, ImapMovePartialError):
         return SafeError("partial_move", "move may have copied the message; inspect both mailboxes", scope)
-    if isinstance(exc, PermissionError):
-        return SafeError("permission_denied", "request denied", scope)
     if isinstance(exc, KeyError):
         return SafeError("not_found", "requested resource was not found", scope)
     if isinstance(exc, ValueError):
