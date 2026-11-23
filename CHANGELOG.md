@@ -2,11 +2,14 @@
 
 ## Unreleased
 
+## 0.14.0
+
 ### Added
 
 - Move one or up to 50 selected ordinary messages to the account's
   server-designated Trash using native IMAP MOVE. Batch results are ordered
-  and report success or failure per message.
+  and report success or failure per message. If a move's outcome is uncertain,
+  the broker skips the remaining items.
 
 ### Changed
 

@@ -10,16 +10,30 @@ required migration steps and integration contract changes.
 
 ## Choose your upgrade path
 
-| Installed version | Steps when upgrading to 0.13.1 |
+| Installed version | Steps when upgrading to 0.14.0 |
 | --- | --- |
 | 0.3.x or earlier | Complete the legacy plugin migration below, then review the 0.9.0, 0.10.0, and 0.11.0 guides and the update notes below. |
 | 0.4.x through 0.8.x | Review the 0.9.0, 0.10.0, and 0.11.0 guides and the update notes below. |
 | 0.9.x | Review the 0.10.0 and 0.11.0 guides and the update notes below. |
 | 0.10.x | Review the 0.11.0 guide and the update notes below. |
 | 0.11.x through 0.12.2 | Review the update notes below. |
-| 0.13.0 | Follow the 0.13.1 update notes below. |
+| 0.13.0 through 0.13.1 | Follow the 0.14.0 update notes below. |
 
 ## Updates after 0.11.0
+
+### Upgrading to 0.14.0
+
+Version 0.14.0 upgrades the local broker protocol from IPC 13 to IPC 14.
+It adds `trash_email` and `trash_emails_batch` for servers that support native
+UID MOVE and expose one selectable SPECIAL-USE Trash mailbox. Existing MCP
+tool calls, account configuration, and OS keyring credentials can be reused.
+
+1. Fully close clients that use the old version. If you run a standalone
+   broker, stop it using the old runtime before updating.
+2. Update the marketplace plugin or your manually pinned runtime to 0.14.0.
+   Update both the broker and frontend before restarting a standalone broker.
+3. Restart the client and run `uvx readndraft-imap-mcp@0.14.0 doctor` to verify
+   broker compatibility.
 
 ### Upgrading to 0.13.1
 
@@ -95,8 +109,8 @@ for the client you previously configured. Run only the applicable command, or
 both if you previously configured both clients:
 
 ```console
-uvx readndraft-imap-mcp@0.13.1 migrate-plugin --client codex
-uvx readndraft-imap-mcp@0.13.1 migrate-plugin --client claude-code
+uvx readndraft-imap-mcp@0.14.0 migrate-plugin --client codex
+uvx readndraft-imap-mcp@0.14.0 migrate-plugin --client claude-code
 ```
 
 The migration removes only a legacy MCP invocation recognized as having been
