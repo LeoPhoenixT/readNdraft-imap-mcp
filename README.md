@@ -31,7 +31,7 @@ runs the published package in an isolated environment.
 Run guided setup in a real interactive terminal:
 
 ```console
-uvx readndraft-imap-mcp@0.13.1 setup
+uvx readndraft-imap-mcp@0.14.0 setup
 ```
 
 This configures only readNdraft's local account, credential, and private state.
@@ -77,7 +77,7 @@ For Claude Code, run these commands inside Claude Code:
 ```
 
 The plugin supplies one shared `readndraft-email` skill and a local stdio MCP
-definition pinned to `readndraft-imap-mcp@0.13.1`. It does not contain secrets,
+definition pinned to `readndraft-imap-mcp@0.14.0`. It does not contain secrets,
 account data, or a send capability.
 
 ### 4. Restart and verify
@@ -359,10 +359,10 @@ credentials or private mail.
 IPC 14 adds single and batch Trash operations to the versioned broker contract.
 Update the frontend and broker together. See [broker capacity and IPC migration](https://github.com/LeoPhoenixT/readNdraft-imap-mcp/blob/main/docs/BROKER_CAPACITY.md)
 for bounded credential execution, fair account queues, and IPC admission budgets. Inspect `error.code` rather than matching error
-message text. A `draft_busy`
-result means another update holds the draft lock; `recovery_required` needs
-draft recovery before retrying; `outcome_unknown` means the IMAP write may have
-completed. Reconcile the affected mailboxes or draft before retrying.
+message text. `draft_busy` means another update holds the draft lock.
+`outcome_unknown` means the IMAP write may have completed. `recovery_required`
+means a draft needs recovery or the batch skipped an item after an uncertain
+move. Reconcile the affected mailboxes or draft before retrying.
 
 ## Development
 
