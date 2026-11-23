@@ -12,4 +12,4 @@ class ImapMovePartialError(ImapClientError):
 
 
 class ImapMoveOutcomeUnknownError(ImapClientError):
-    """Raised when transport fails after a native MOVE may have been sent."""
+    """Raised when completion of a native MOVE cannot be established."""

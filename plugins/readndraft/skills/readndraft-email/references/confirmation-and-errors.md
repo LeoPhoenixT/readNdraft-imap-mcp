@@ -28,9 +28,11 @@ items are not rolled back. Present only failures the user still wants retried
 and retry only when the user still wants those specific failures retried. Honor
 `retry_after_seconds` when it is present. Never automatically retry an ambiguous
 `outcome_unknown`; inspect mailbox state first.
-The same rule applies to moves: a lost response may follow a completed server
-mutation, so search both mailboxes and ask the user to reselect before any new
-move request.
+For native moves, a lost response or a server error can leave the message
+location uncertain. Search both mailboxes and ask the user to reselect before
+any new move request. Batch move items marked `recovery_required` were skipped
+after an earlier uncertain move.
+
 # IPC 12 draft recovery and outcome errors
 
 For `draft_busy`, do not retry concurrently: wait for the current draft update

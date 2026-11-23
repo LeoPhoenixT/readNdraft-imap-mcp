@@ -1072,10 +1072,11 @@ class ImapClient:
             status, data = command("UID", "MOVE", identity.uid, destination)
         except (OSError, imaplib.IMAP4.abort) as exc:
             raise ImapMoveOutcomeUnknownError("UID MOVE outcome is unknown") from exc
-        mapping = self._copy_uid(imap, data, identity.uid)
-        if status != "OK" and mapping is not None:
-            raise ImapMovePartialError("server reported a destination copy but rejected UID MOVE")
+        if status == "NO":
+            # RFC 6851 permits partial completion even without a COPYUID response.
+            raise ImapMoveOutcomeUnknownError("server rejected UID MOVE; message location is uncertain")
         _expect_ok((status, data), "UID MOVE message")
+        mapping = self._copy_uid(imap, data, identity.uid)
         return self._move_result(identity, destination_mailbox, mapping, "uid_move")
 
     @staticmethod

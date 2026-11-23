@@ -14,6 +14,7 @@ from typing import TypeVar
 
 from readndraft_imap_mcp.credentials import CredentialStore
 from readndraft_imap_mcp.imap.client import ImapClient
+from readndraft_imap_mcp.safe_error import SafeError
 
 from .accounts import AccountConfig, AccountRegistry
 from .common import BatchItemOutcome, batch_error
@@ -379,11 +380,14 @@ class BrokerExecutionContext:
                     error = batch_error(exc, outcome_unknown=write and started.is_set())
                     outcomes.append(BatchItemOutcome(error=error))
                     if error.code == "outcome_unknown" or context.cancelled.is_set() or context.remaining() <= 0:
-                        remaining_error = (
-                            batch_error(OSError("mail server connection lost"))
-                            if error.reason == "transport_loss"
-                            else batch_error(TimeoutError("broker request deadline expired"))
-                        )
+                        if error.reason == "transport_loss":
+                            remaining_error = batch_error(OSError("mail server connection lost"))
+                        elif error.code == "outcome_unknown" and error.reason is None:
+                            remaining_error = SafeError(
+                                "recovery_required", "write not attempted; reconcile the previous move first", "item",
+                            )
+                        else:
+                            remaining_error = batch_error(TimeoutError("broker request deadline expired"))
                         outcomes.extend(BatchItemOutcome(error=remaining_error) for _ in items[index + 1 :])
                         break
             return tuple(outcomes)

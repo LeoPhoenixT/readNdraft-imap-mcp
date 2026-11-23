@@ -520,6 +520,26 @@ def test_trash_batch_stops_after_unknown_move_and_audits_remaining_items() -> No
     assert [command[2] for command in connection.commands if command[:2] == ("UID", "MOVE")] == ["7"]
 
 
+@pytest.mark.parametrize("reply", [b"move failed", b"[COPYUID 77 7 99] move failed"])
+def test_trash_batch_stops_after_tagged_no(reply: bytes) -> None:
+    class RejectingTrashConnection(TrashConnection):
+        def _simple_command(self, *args):
+            if args[:3] == ("UID", "MOVE", "7"):
+                self.commands.append(args)
+                return "NO", [reply]
+            return super()._simple_command(*args)
+
+    connection = RejectingTrashConnection()
+    audit = MemoryAudit()
+    broker = build_trash_broker(connection, audit)
+    results = asyncio.run(broker.trash_emails_batch((IDENTITY, replace(IDENTITY, uid="9"))))
+
+    assert [command[2] for command in connection.commands if command[:2] == ("UID", "MOVE")] == ["7"]
+    assert [item.error.code for item in results] == ["outcome_unknown", "recovery_required"]
+    assert results[0].error.reason is None
+    assert [event.error_category for event in audit.events] == ["outcome_unknown", "recovery_required"]
+
+
 def test_trash_single_records_unknown_move() -> None:
     connection = TrashConnection(disconnect_uid="7")
     audit = MemoryAudit()
